@@ -1,0 +1,57 @@
+Technology Stack:   Front End (HTML, CSS, JS, JQuery, Bootstrap)
+                    Server (PHP)
+                    Backend (MySQL)
+
+
+FP2: requirements. md (elaboration)
+FP3: 8 week plan including something to show for FP3  (code structure, website design, how is the final success story going to look like).
+
+
+Requirements: users explain the pain points (or what they want to build). For example, the interaction with the users can be based on the following points.
+
+1
+Pain Points
+What specific problem are you solving?
+
+▸
+2
+Data Sources
+What data are you consuming?
+
+▸
+3
+Data Access
+How are you getting the data?
+
+▸
+4
+End Result
+What are you producing?
+
+▸
+5
+Stakeholders & Consumers
+Who will own and use this?
+
+▸
+6
+Audience Type
+Business Owners or Developers?
+
+▸
+7
+Current Process
+How is this solved today?
+
+▸
+8
+Interaction Model
+Chat conversation or batch report?
+
+
+And our system of multiple agents provide a plan (prompts or a series of prompts) on building the software.
+
+Users may decide to make use of these prompts / plan to build the software.
+
+
+                                                       
