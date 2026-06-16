@@ -1,0 +1,33 @@
+You need to build a plan  / providing the guidance
+
+1. You have unstructured data. So, you need to go RAG database.
+2. you have MySQL data. You have the option of building an API or using SQL queries directly;
+
+
+3. The Q&A session may take many routes based on the answers users provide.
+
+- Do we even need AI / LLM at runtime?
+- You need AI/Claude while building the site 
+
+Build time vs Run time
+-- decision tree / flow chart type decision to produce the final plan 
+
+Perhaps, you take all the answers from the user and rely on AI to produce the plan
+/plan ______________ > MEMORY.md  PLAN.md -- this will be produced the AI agents when we ask it to plan.
+
+(I am building a AI-software plan builder using this HTML/CSS/JS/Boostrap......;
+Build me the site. If something is not clear, ask me clarifying questions)
+
+=================================================
+
+Prototype: How do you connect to AI models from website?
+
+API KEY : 
+MODEL: claude (sonnet, opus, haiku)
+prompt:
+
+
+
+pyton code
+php code
+java code
