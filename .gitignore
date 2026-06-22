@@ -1,0 +1,21 @@
+# Local environment credentials — never commit these
+.env
+*.local.php
+db_config.local.php
+
+# IDE metadata
+.idea/
+.vscode/
+*.iml
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# PHP dependencies
+vendor/
+composer.lock
+
+# Temporary / debug files
+test_db.php
+*.log
