@@ -1,5 +1,9 @@
 # Port — Weekly Progress Log
 
+> _Plan note: UI work was pulled earlier (to FP6) so the team can demo a working
+> front end, with the lock/race-condition test following it (FP7). The Extraction
+> gate (FP8) and Routing boundary (FP9) work shifted one slot later as a result._
+
 ---
 
 ## FP4 — Week 6 | Due: Jun 22
@@ -36,7 +40,7 @@
 ---
 
 ## FP6 — Week 8 | Due: Jul 6
-**Deliverable:** Implement programmatic gate check (all 8 `COVERED` → trigger Compiler); run Shopify API verification proof
+**Deliverable:** Build right domain matrix panel — 8 `data-domain` badges + progress bar; verify responsive at 1440/768/375px  _(moved earlier from FP8 for the UI demo)_
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
 
@@ -49,7 +53,7 @@
 ---
 
 ## FP7 — Week 9 | Due: Jul 13
-**Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test
+**Deliverable:** Run race-condition / lock stress test — confirm single network request per submit in DevTools; verify single server execution per submit  _(moved earlier from FP9; follows the UI)_
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
 
@@ -62,7 +66,7 @@
 ---
 
 ## FP8 — Week 10 | Due: Jul 20
-**Deliverable:** Build right domain matrix panel — 8 `data-domain` badges + progress bar; verify responsive at 1440/768/375px
+**Deliverable:** Implement programmatic gate check (all 8 `COVERED` → trigger Compiler); run Shopify API verification proof  _(shifted later from FP6)_
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
 
@@ -75,7 +79,7 @@
 ---
 
 ## FP9 — Week 11 | Due: Jul 27
-**Deliverable:** Run race-condition stress test — confirm single network request per submit in DevTools; verify single server execution per submit
+**Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test  _(shifted later from FP7)_
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
 
