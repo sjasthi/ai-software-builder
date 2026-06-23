@@ -5,13 +5,20 @@
 ## FP4 — Week 6 | Due: Jun 22
 **Deliverable:** Write schema migration test — verify tables, UNIQUE token constraint, JSON round-trip in `domain_state`
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `requirement-orchestrator/tests/schema_migration_test.php` — schema migration test (PHP/PDO). Verifies:
+  1. all three core tables exist (`sessions`, `conversation_log`, `domain_state`),
+  2. the UNIQUE `session_token` constraint rejects a duplicate insert,
+  3. an 8-domain JSON object round-trips through `domain_state` with zero data loss.
+- Retrieves the connection via Cox's `config/database.php` (`getDB()`) and applies Jaffer's `config/schema.sql` against an isolated `requirement_orchestrator_test` database (real data never touched). **Result: 12 passed, 0 failed.**
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- Verified end-to-end against the real teammate files (Cox's `getDB()` + Jaffer's `config/schema.sql`) — integration is demonstrated, not mocked.
+- Test is schema-aware of Jaffer's design: children link by numeric `session_id` (FK auto-resolved), token is `CHAR(64)` with a length CHECK, JSON lives in `domain_json`.
+- Committed `c6ff71d` and pushed to `main`. Local DB credentials (`config/local.php`) kept gitignored — not committed.
+- Run locally: `C:\xampp\php\php.exe tests\schema_migration_test.php` from the `requirement-orchestrator/` folder.
 
 ---
 
