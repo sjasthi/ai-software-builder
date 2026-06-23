@@ -5,7 +5,7 @@
 ## FP4 — Week 6 | Due: Jun 22
 **Deliverable:** Write `config/database.php`: DB connection setup and shared utilities
 
-**Status:** `[ ] Not Started` / `[x] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
 - Created `requirement-orchestrator/config/database.php` — PDO singleton with ERRMODE_EXCEPTION, utf8mb4, emulate_prepares off

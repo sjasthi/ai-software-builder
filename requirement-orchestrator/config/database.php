@@ -1,8 +1,14 @@
 <?php
 
+// Load local credentials if present (gitignored — never committed)
+$_localConfig = __DIR__ . '/local.php';
+if (file_exists($_localConfig)) {
+    require_once $_localConfig;
+}
+
 /**
  * Returns a shared PDO connection to the MySQL database.
- * Credentials are loaded from environment variables — never hardcoded.
+ * Credentials are loaded from local.php or environment variables.
  * Throws PDOException on connection failure (ERRMODE_EXCEPTION enforced).
  */
 function getDB(): PDO {

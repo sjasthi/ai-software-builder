@@ -2,6 +2,7 @@
 .env
 *.local.php
 db_config.local.php
+requirement-orchestrator/config/local.php
 
 # IDE metadata
 .idea/
