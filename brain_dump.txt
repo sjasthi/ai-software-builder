@@ -31,3 +31,11 @@ prompt:
 pyton code
 php code
 java code
+
+=====================
+
+(FP6) proposal - CRUD
+json persistane
+data/proposals
+
+
