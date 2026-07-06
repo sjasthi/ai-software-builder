@@ -20,3 +20,6 @@ composer.lock
 # Temporary / debug files
 test_db.php
 *.log
+
+# Runtime session storage (per-user local data, auto-created by the app)
+requirement-orchestrator/sessions/
