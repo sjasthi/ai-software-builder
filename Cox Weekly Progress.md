@@ -35,26 +35,30 @@
 ## FP6 — Week 8 | Due: Jul 6
 **Deliverable:** Implement `createSession()`, `readSession()`, `writeExchange()`, and `readTranscript()` in `InterviewSession.php`
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `requirement-orchestrator/src/InterviewSession.php` — `createSession()` generates a unique session id, seeds the transcript with the opening pain-points question, and writes the initial JSON file. `readSession()` validates the id against a path-traversal regex before reading. `writeExchange()` appends one role/content/timestamp entry to the transcript array and atomically saves. `readTranscript()` returns the full transcript for a given session. `setTitle()` derives a session title from the user's first answer. `listSessions()` powers the Previous Sessions landing screen.
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- All four required methods plus two supporting ones are implemented and verified by Port's recovery test (`tests/session_recovery_test.php` — 9 passed, 0 failed).
+- Session files are stored as `sessions/<id>.json`; writes go through `atomicSave()` (Port's temp-then-rename) so a crash mid-write never corrupts a live session.
 
 ---
 
 ## FP7 — Week 9 | Due: Jul 13
 **Deliverable:** Build `RequirementParser.php` — construct extraction prompt, inject user message + domain JSON, call LLM in JSON mode; implement response validation (parse and validate returned JSON against 8-domain schema, write to DB)
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[x] In Progress` / `[ ] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `requirement-orchestrator/src/RequirementParser.php` — skeleton created. `extract()` builds the Section 3a system prompt with live domain state injected, calls Claude via the Anthropic PHP SDK (`claude-opus-4-8`, 512 max tokens), and routes the raw text through `parseAndValidate()`. Validation: strips markdown fencing, JSON-decodes, confirms all 8 domain keys present, and enforces COVERED-sticky invariant (an already-covered domain cannot regress). `allCovered()` is the programmatic gate — returns true when all 8 domains are COVERED, signaling `endpoint.php` to skip routing and call ManifestGenerator instead.
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- Requires `composer require anthropic-ai/sdk` and `ANTHROPIC_API_KEY` in the environment (or `config/local.php`).
+- No streaming needed — extraction output is always < 512 tokens; latency is negligible.
+- No adaptive thinking — JSON extraction is deterministic; reasoning overhead would slow the chain with no accuracy gain.
+- Verification proof target (per Big Picture Plan): feed *"I want to automatically pull my inventory from a Shopify API every morning"* and confirm `data_sources`, `data_access`, and `interaction_model` return `COVERED` in one pass.
 
 ---
 

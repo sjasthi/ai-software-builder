@@ -45,6 +45,7 @@
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
+<<<<<<< Updated upstream
 - `src/InterviewSession.php` — Port's persistence methods:
   - `writeDomainState()` — merges updated coverage for the 8 known domains, re-derives `status` (`complete` when all 8 `COVERED`), ignores unknown keys.
   - `readDomainState()` — returns the 8-domain coverage map (blank all-`OPEN` map if absent).
@@ -55,6 +56,15 @@
 - Storage is **JSON files** (`sessions/<id>.json`), per the professor's direction — open-source-friendly, no auth needed. This supersedes the Big Picture Plan's MySQL persistence for the runtime app (the MySQL schema + FP4 migration test still stand for the DB deliverable).
 - Recovery proof simulates a mid-write crash by dropping a truncated `.tmp` file: the live session stays valid JSON and fully recoverable. Run: `C:\xampp\php\php.exe tests\session_recovery_test.php`.
 - `sessions/` runtime data is now gitignored so it doesn't pollute the repo.
+=======
+- `requirement-orchestrator/src/InterviewSession.php` — `writeDomainState()` merges updated domain keys into the session (only the 8 known domain keys are accepted, unknown keys are silently ignored), recomputes `status` to `complete` when all 8 are `COVERED`, and atomically saves. `readDomainState()` returns the 8-domain map for any session id. Both methods share the `atomicSave()` helper: write to `<id>.json.tmp`, then `rename()` over the real file — a crash mid-write leaves the old file intact. `listSessions()` scans `sessions/*.json` and returns summary rows (id, title, updated_at, covered count, status) for the landing screen.
+- `requirement-orchestrator/tests/session_recovery_test.php` — atomic transaction recovery test. Proves: clean writes round-trip correctly, no orphaned `.tmp` files remain, simulating a crash (dropping a corrupt `.tmp` next to the live file) leaves the live session fully intact and readable, and `status` flips to `complete` when all 8 domains are `COVERED`. Result: **9 passed, 0 failed.**
+
+### Notes
+- `rename()` is atomic on Windows (uses `MoveFileEx` with `REPLACE_EXISTING`) and POSIX — the real session file is never in a partially-written state.
+- Path-traversal guard in `safeId()` (whitelist regex) is shared by all methods that accept a session id.
+- Run test: `C:\xampp\php\php.exe tests\session_recovery_test.php` from the `requirement-orchestrator/` folder.
+>>>>>>> Stashed changes
 
 ---
 
