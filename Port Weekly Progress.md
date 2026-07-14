@@ -71,11 +71,11 @@
 ## FP7 — Week 9 | Due: Jul 13
 **Deliverable:** Implement programmatic gate check (all 8 `COVERED` → trigger Compiler); run Shopify API verification proof
 
-**Status:** `[ ] Not Started` / `[x] In Progress` / `[ ] Complete`  _(started early — FP6/FP7 merged to leave testing time before turn-in)_
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
 - `src/RequirementParser.php` — Port's `gate()`: pure-logic programmatic gate check. Given the 8-domain state it returns `all_covered`, `covered_count`, `open_domains`, and `next_action` (`COMPILE` when all 8 `COVERED`, else `INTERVIEW`). Defensive: only the 8 known domains count, and any non-`COVERED` value can never trip the gate early. `gateForSession()` runs it against a saved session via Port's FP6 store.
-- `tests/gate_check_test.php` — Shopify API verification proof. **Result: 12 passed, 0 failed.** Confirms the Shopify sentence (data_sources + data_access + interaction_model) leaves 5 domains OPEN and does **not** trigger the Compiler; all-8-`COVERED` flips `next_action` to `COMPILE`.
+- `tests/fp7_verification.php` — combined FP7 verification proof (Cox + Port). Port section covers gate logic: Shopify partial state (3 covered) → INTERVIEW, all-8-covered → COMPILE, edge cases (empty state, junk values, unknown session → null). **Result: 19 passed, 0 failed.**
 
 ### Notes
 - **Cox seam:** `RequirementParser::extract()` (the LLM call in JSON mode) is stubbed with a documented contract and throws until built — Port's gate is independent of it, so the verification proof runs today by injecting the extraction result into the FP6 session store (exactly the state `extract()` will write). Cox drops his LLM logic into `extract()` with no change to the gate.

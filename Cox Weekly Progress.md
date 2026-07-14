@@ -49,16 +49,17 @@
 ## FP7 — Week 9 | Due: Jul 13
 **Deliverable:** Build `RequirementParser.php` — construct extraction prompt, inject user message + domain JSON, call LLM in JSON mode; implement response validation (parse and validate returned JSON against 8-domain schema, write to DB)
 
-**Status:** `[ ] Not Started` / `[x] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-- `requirement-orchestrator/src/RequirementParser.php` — skeleton created. `extract()` builds the Section 3a system prompt with live domain state injected, calls Claude via the Anthropic PHP SDK (`claude-opus-4-8`, 512 max tokens), and routes the raw text through `parseAndValidate()`. Validation: strips markdown fencing, JSON-decodes, confirms all 8 domain keys present, and enforces COVERED-sticky invariant (an already-covered domain cannot regress). `allCovered()` is the programmatic gate — returns true when all 8 domains are COVERED, signaling `endpoint.php` to skip routing and call ManifestGenerator instead.
+- `requirement-orchestrator/src/RequirementParser.php` — `extract()` builds the system prompt with live domain state + domain definitions injected, calls Claude (`claude-opus-4-8`, 512 max tokens) via PHP's built-in curl (no Composer/SDK required), and routes the raw text through `parseAndValidate()`. Validation: strips markdown fencing, JSON-decodes, confirms all 8 domain keys present, and enforces COVERED-sticky invariant (an already-covered domain cannot regress). `allCovered()` is the programmatic gate — returns true when all 8 domains are COVERED, signaling `endpoint.php` to skip routing and call ManifestGenerator instead.
+- `requirement-orchestrator/tests/fp7_verification.php` — combined FP7 verification proof (Cox + Port). Cox section: live LLM call with the Shopify sentence confirms `data_sources`, `data_access`, and `interaction_model` → COVERED in one pass, 5 domains remain OPEN, gate does not fire. Port section: programmatic gate logic (no LLM). **Result: 19 passed, 0 failed.**
 
 ### Notes
-- Requires `composer require anthropic-ai/sdk` and `ANTHROPIC_API_KEY` in the environment (or `config/local.php`).
+- Uses PHP's built-in curl — no Composer or external SDK needed. Requires `ANTHROPIC_API_KEY` in the environment (or `config/local.php`).
+- Domain definitions added to system prompt so the LLM correctly maps "every morning" → `interaction_model` (scheduled automation).
 - No streaming needed — extraction output is always < 512 tokens; latency is negligible.
-- No adaptive thinking — JSON extraction is deterministic; reasoning overhead would slow the chain with no accuracy gain.
-- Verification proof target (per Big Picture Plan): feed *"I want to automatically pull my inventory from a Shopify API every morning"* and confirm `data_sources`, `data_access`, and `interaction_model` return `COVERED` in one pass.
+- Run: `C:\xampp\php\php.exe tests\fp7_verification.php` from the `requirement-orchestrator/` folder.
 
 ---
 
