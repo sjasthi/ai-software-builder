@@ -45,26 +45,17 @@
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<<<<<<< Updated upstream
 - `src/InterviewSession.php` — Port's persistence methods:
-  - `writeDomainState()` — merges updated coverage for the 8 known domains, re-derives `status` (`complete` when all 8 `COVERED`), ignores unknown keys.
-  - `readDomainState()` — returns the 8-domain coverage map (blank all-`OPEN` map if absent).
-  - `atomicSave()` — crash-safe write: encode to a `.tmp` file, then `rename()` over the live file (atomic replace on POSIX **and** Windows), so an interrupted write can never corrupt a session.
+  - `writeDomainState()` — merges updated coverage into the session; only the 8 known domain keys are accepted (unknown keys ignored), re-derives `status` to `complete` when all 8 are `COVERED`, then atomically saves.
+  - `readDomainState()` — returns the 8-domain coverage map for any session (blank all-`OPEN` map if the session is absent).
+  - `atomicSave()` — crash-safe write shared by both methods: encode to `<id>.json.tmp`, then `rename()` over the live file. `rename()` is atomic on Windows (`MoveFileEx` + `REPLACE_EXISTING`) and POSIX, so an interrupted write leaves the old file fully intact — never a half-written session.
 - `tests/session_recovery_test.php` — atomic transaction recovery test. **Result: 11 passed, 0 failed.**
 
 ### Notes
-- Storage is **JSON files** (`sessions/<id>.json`), per the professor's direction — open-source-friendly, no auth needed. This supersedes the Big Picture Plan's MySQL persistence for the runtime app (the MySQL schema + FP4 migration test still stand for the DB deliverable).
-- Recovery proof simulates a mid-write crash by dropping a truncated `.tmp` file: the live session stays valid JSON and fully recoverable. Run: `C:\xampp\php\php.exe tests\session_recovery_test.php`.
-- `sessions/` runtime data is now gitignored so it doesn't pollute the repo.
-=======
-- `requirement-orchestrator/src/InterviewSession.php` — `writeDomainState()` merges updated domain keys into the session (only the 8 known domain keys are accepted, unknown keys are silently ignored), recomputes `status` to `complete` when all 8 are `COVERED`, and atomically saves. `readDomainState()` returns the 8-domain map for any session id. Both methods share the `atomicSave()` helper: write to `<id>.json.tmp`, then `rename()` over the real file — a crash mid-write leaves the old file intact. `listSessions()` scans `sessions/*.json` and returns summary rows (id, title, updated_at, covered count, status) for the landing screen.
-- `requirement-orchestrator/tests/session_recovery_test.php` — atomic transaction recovery test. Proves: clean writes round-trip correctly, no orphaned `.tmp` files remain, simulating a crash (dropping a corrupt `.tmp` next to the live file) leaves the live session fully intact and readable, and `status` flips to `complete` when all 8 domains are `COVERED`. Result: **9 passed, 0 failed.**
-
-### Notes
-- `rename()` is atomic on Windows (uses `MoveFileEx` with `REPLACE_EXISTING`) and POSIX — the real session file is never in a partially-written state.
-- Path-traversal guard in `safeId()` (whitelist regex) is shared by all methods that accept a session id.
-- Run test: `C:\xampp\php\php.exe tests\session_recovery_test.php` from the `requirement-orchestrator/` folder.
->>>>>>> Stashed changes
+- Storage is **JSON files** (`sessions/<id>.json`), per the professor's direction — open-source-friendly, no auth needed. This supersedes the Big Picture Plan's MySQL persistence for the runtime app (the MySQL schema + FP4 migration test still stand as the separate DB deliverable).
+- Recovery proof simulates a mid-write crash by dropping a truncated `.tmp` next to the live file: the live session stays valid JSON and fully recoverable, and `status` correctly flips to `complete` once all 8 domains are `COVERED`. A path-traversal guard (`safeId()` whitelist regex) is shared by every method that takes a session id and is exercised by the test.
+- `sessions/` runtime data is gitignored so it doesn't pollute the repo.
+- Run: `C:\xampp\php\php.exe tests\session_recovery_test.php` from the `requirement-orchestrator/` folder.
 
 ---
 
@@ -88,13 +79,36 @@
 ## FP8 — Week 10 | Due: Jul 20
 **Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
+
+> _Port covered both FP8 parts this week (Cox made up FP7 last week); the in-scope
+> question-generation half is logged in `Cox Weekly Progress.md`._
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `src/AgentEngine.php` — Routing Agent, **out-of-scope branch**. `route()` is the pure
+  decision function: a scope label in, `{advance, action}` out — anything that isn't an
+  explicit `OUT_OF_SCOPE` is treated as in-scope so a mis-classification never traps the
+  user. `classifyScope()` (LLM) labels the latest turn `IN_SCOPE`/`OUT_OF_SCOPE` and fails
+  toward `IN_SCOPE`. `redirect()` (LLM, with a template fallback) steers a drifted user back
+  to the current domain **without touching `domain_state`** — the progress bar cannot move
+  on off-topic input. `nextOpenDomain()` is the shared pure helper.
+- `public/post_message.php` — wired the branch into the live chain: `classifyScope → route`;
+  on no-advance it appends only a redirect turn (no extraction, no `writeDomainState`).
+- `tests/boundary_deviation_test.php` — boundary deviation proof. No live LLM (routing is
+  pure; LLM calls take an injected fake client). Proves: drift routes to no-advance and
+  leaves `domain_state` **byte-for-byte unchanged**, in-scope is allowed to advance, junk
+  labels never trap the user, and both LLM branches fall back to templates with no key.
+  **Result: 16 passed, 0 failed.**
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- Same seam split as FP7: the **pure decision logic** (`route`, `nextOpenDomain`) is
+  independent of the LLM, so the proof runs today by injecting scope labels / a fake client —
+  no key required. The gate refactor kept `RequirementParser`'s public API identical, so
+  `gate_check_test.php` still passes **12/12** (verified).
+- Fails safe: a missing key or any agent error drops the controller to the FP6 placeholder
+  (mechanical advance + static question), so the app always stays demoable.
+- Run: `C:\xampp\php\php.exe tests\boundary_deviation_test.php` from `requirement-orchestrator/`.
+  Full walkthrough in `demoFP8.md`.
 
 ---
 

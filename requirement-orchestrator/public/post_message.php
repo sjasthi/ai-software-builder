@@ -1,15 +1,20 @@
 <?php
 /**
- * Handle a submitted answer (FP6). Persists the user's message, then advances
- * the interview one domain.
+ * Handle a submitted answer.
  *
- * NOTE: the "advance to the next domain in order" logic here is a simple,
- * non-LLM placeholder so persistence and the wizard flow are demoable now.
- * It gets replaced by the real intelligence at FP7–FP8 (RequirementParser
- * extraction + AgentEngine routing). The persistence calls it uses
- * (writeExchange / writeDomainState) are the real FP6 methods and don't change.
+ * This is the sequential agent chain (FP8): record the answer, then
+ *   Routing Agent (scope) → in-scope: Extraction → gate → next question
+ *                         → out-of-scope: redirect, no advance.
+ * At FP10 this same logic lifts into public/endpoint.php for AJAX, unchanged.
+ *
+ * Graceful degradation: if no LLM key is configured (or any agent call throws),
+ * we fall back to the FP6 placeholder — mechanically advance one domain and ask
+ * the static opening question — so the app still demos without a key.
  */
+session_start();  // so the agents can read the visitor's per-use API key
 require_once __DIR__ . '/../src/InterviewSession.php';
+require_once __DIR__ . '/../src/RequirementParser.php';
+require_once __DIR__ . '/../src/AgentEngine.php';
 
 $id  = $_POST['id'] ?? '';
 $msg = trim($_POST['message'] ?? '');
@@ -29,30 +34,62 @@ if (($session['title'] ?? '') === 'Untitled session') {
 // Record the user's answer.
 InterviewSession::writeExchange($id, 'user', $msg);
 
-// Mark the current (first OPEN) domain covered, then ask the next one.
-$state = InterviewSession::readDomainState($id);
-$current = null;
-foreach (InterviewSession::DOMAINS as $d) {
-    if (($state[$d] ?? 'OPEN') === 'OPEN') { $current = $d; break; }
+try {
+    $engine = new AgentEngine();
+
+    // ── Routing Agent: is this message about the project, or drift? ──
+    $scope = $engine->classifyScope($id, $msg);
+
+    if (!AgentEngine::route($scope)['advance']) {
+        // OUT-OF-SCOPE (Port): steer back to the current domain, do NOT advance.
+        $domain = AgentEngine::nextOpenDomain(InterviewSession::readDomainState($id)) ?? 'pain_points';
+        InterviewSession::writeExchange($id, 'agent', $engine->redirect($id, $msg, $domain));
+    } else {
+        // IN-SCOPE (Cox): extraction → gate → tailored next question.
+        $parser   = new RequirementParser();
+        $newState = $parser->extract($id, $msg);
+        if ($newState !== null) {
+            InterviewSession::writeDomainState($id, $newState);
+        }
+
+        $state = InterviewSession::readDomainState($id);
+        if (RequirementParser::gate($state)['all_covered']) {
+            InterviewSession::writeExchange($id, 'agent',
+                'That covers all 8 areas — your build plan is ready on the right.');
+        } else {
+            InterviewSession::writeExchange($id, 'agent', $engine->nextQuestion($id, $state));
+        }
+    }
+} catch (Throwable $e) {
+    // ── No key / agent failure → FP6 placeholder behavior ──
+    advancePlaceholder($id);
 }
 
-if ($current !== null) {
-    InterviewSession::writeDomainState($id, [$current => 'COVERED']);
+header('Location: session.php?id=' . urlencode($id));
+exit;
 
-    // Find the next still-open domain to ask about.
+/**
+ * FP6 fallback: mark the first OPEN domain COVERED and ask the next static
+ * opening question. Keeps the wizard demoable when the LLM path is unavailable.
+ */
+function advancePlaceholder(string $id): void
+{
+    $state   = InterviewSession::readDomainState($id);
+    $current = null;
+    foreach (InterviewSession::DOMAINS as $d) {
+        if (($state[$d] ?? 'OPEN') === 'OPEN') { $current = $d; break; }
+    }
+    if ($current === null) { return; }
+
+    InterviewSession::writeDomainState($id, [$current => 'COVERED']);
     $state[$current] = 'COVERED';
+
     $next = null;
     foreach (InterviewSession::DOMAINS as $d) {
         if (($state[$d] ?? 'OPEN') === 'OPEN') { $next = $d; break; }
     }
 
-    if ($next !== null) {
-        InterviewSession::writeExchange($id, 'agent', InterviewSession::OPENING[$next]);
-    } else {
-        InterviewSession::writeExchange($id, 'agent',
-            "That covers all 8 areas — your build plan is ready on the right.");
-    }
+    InterviewSession::writeExchange($id, 'agent', $next !== null
+        ? InterviewSession::OPENING[$next]
+        : 'That covers all 8 areas — your build plan is ready on the right.');
 }
-
-header('Location: session.php?id=' . urlencode($id));
-exit;

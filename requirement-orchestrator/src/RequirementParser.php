@@ -8,21 +8,20 @@
  */
 
 require_once __DIR__ . '/InterviewSession.php';
+require_once __DIR__ . '/LlmClient.php';
 
 class RequirementParser
 {
-    private string $apiKey;
-    private const MODEL     = 'claude-opus-4-8';
-    private const API_URL   = 'https://api.anthropic.com/v1/messages';
-    private const API_VER   = '2023-06-01';
+    private LlmClient $client;
 
-    public function __construct()
+    /**
+     * @param LlmClient|null $client injected client (tests); defaults to the
+     *        configured provider for the 'extraction' task. Throws when no key
+     *        is configured, preserving the FP7 contract.
+     */
+    public function __construct(?LlmClient $client = null)
     {
-        $key = getenv('ANTHROPIC_API_KEY') ?: $this->keyFromConfig();
-        if ($key === '') {
-            throw new RuntimeException('ANTHROPIC_API_KEY is not set');
-        }
-        $this->apiKey = $key;
+        $this->client = $client ?? LlmClientFactory::forTask('extraction');
     }
 
     /**
@@ -70,38 +69,19 @@ explanation, no markdown fencing:
 Rules:
 - Only mark COVERED for domains the user explicitly addressed. Do not infer.
 - Domains already marked COVERED must remain COVERED.
-- A domain is COVERED only when the user provides concrete, specific detail.
+- Set a HIGH bar for COVERED: the user must give concrete, specific, buildable
+  detail for that domain — names, numbers, formats, frequency, or a clear example.
+  A vague, generic, or passing mention is NOT enough.
+- When an answer is partial or ambiguous, keep the domain OPEN so the interview can
+  dig deeper. Prefer OPEN whenever you are not confident the detail is sufficient.
 PROMPT;
 
-        $body = json_encode([
-            'model'      => self::MODEL,
-            'max_tokens' => 512,
-            'system'     => $systemPrompt,
-            'messages'   => [
-                ['role' => 'user', 'content' => $userMessage],
-            ],
-        ]);
-
-        $ch = curl_init(self::API_URL);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                'x-api-key: ' . $this->apiKey,
-                'anthropic-version: ' . self::API_VER,
-            ],
-            CURLOPT_POSTFIELDS => $body,
-        ]);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($response === false || $httpCode !== 200) { return null; }
-
-        $data = json_decode($response, true);
-        $raw  = $data['content'][0]['text'] ?? '';
+        $raw = $this->client->complete(
+            $systemPrompt,
+            [['role' => 'user', 'content' => $userMessage]],
+            ['max_tokens' => 512]
+        );
+        if ($raw === null) { return null; }
 
         return $this->parseAndValidate($raw, $currentState);
     }
@@ -168,13 +148,5 @@ PROMPT;
         $session = InterviewSession::readSession($sessionId);
         if ($session === null) { return null; }
         return self::gate($session['domain_state'] ?? []);
-    }
-
-    private function keyFromConfig(): string
-    {
-        $local = __DIR__ . '/../config/local.php';
-        if (!file_exists($local)) { return ''; }
-        $cfg = include $local;
-        return is_array($cfg) ? ($cfg['api_key'] ?? '') : '';
     }
 }

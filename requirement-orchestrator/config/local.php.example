@@ -1,0 +1,52 @@
+<?php
+/**
+ * Local, uncommitted configuration.
+ *
+ * Copy this file to `config/local.php` and paste your key(s). `config/local.php`
+ * is gitignored — never commit real credentials.
+ *
+ * You can also skip this file entirely and export ANTHROPIC_API_KEY (Claude) or
+ * OPENAI_API_KEY (ChatGPT) in your environment; the env var takes precedence over
+ * anything set here.
+ *
+ * Without a key the app still runs — the interview falls back to static opening
+ * questions and mechanical domain advance (the FP6 behavior).
+ */
+
+return [
+    // ── FREE DEMO MODE (no key, no cost) ──────────────────────────────────────
+    // Set to true to use the offline ScriptedLlm stand-in: the browser shows the
+    // dynamic FP8 behavior (tailored questions + drift redirect) with NO API key
+    // and NO cost. Flip to false (or delete this line) once you paste a real key
+    // below. You can also enable it without editing this file via env: LLM_MOCK=1
+    'mock' => false,
+
+    // Which provider to use: 'anthropic' (Claude) or 'openai' (ChatGPT). Switching
+    // is just this one line — the agents don't change, and each provider brings its
+    // own low-cost default model (Claude Haiku 4.5 / GPT-4o-mini).
+    'default_provider' => 'anthropic',
+
+    'providers' => [
+        'anthropic' => [
+            'api_key' => 'sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        ],
+        'openai' => [
+            'api_key' => 'sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        ],
+    ],
+
+    // Model per task (optional — OMIT this whole block to use each provider's
+    // low-cost default: Claude Haiku 4.5 for anthropic, GPT-4o-mini for openai).
+    // If you set it, the IDs must belong to your active provider. Bump any single
+    // task to a stronger model for higher quality — e.g. for Claude set
+    // 'question_generation' => 'claude-opus-4-8', or for OpenAI 'gpt-4.1-mini'.
+    'task_models' => [
+        'extraction'           => 'claude-haiku-4-5-20251001',
+        'scope_classification' => 'claude-haiku-4-5-20251001',
+        'question_generation'  => 'claude-haiku-4-5-20251001',
+        'redirection'          => 'claude-haiku-4-5-20251001',
+    ],
+
+    // Legacy flat shape from FP7 is still honored if present:
+    // 'api_key' => 'sk-ant-...',
+];
