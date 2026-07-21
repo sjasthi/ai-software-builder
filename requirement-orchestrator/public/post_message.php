@@ -2,19 +2,14 @@
 /**
  * Handle a submitted answer.
  *
- * This is the sequential agent chain (FP8): record the answer, then
- *   Routing Agent (scope) → in-scope: Extraction → gate → next question
- *                         → out-of-scope: redirect, no advance.
- * At FP10 this same logic lifts into public/endpoint.php for AJAX, unchanged.
- *
- * Graceful degradation: if no LLM key is configured (or any agent call throws),
- * we fall back to the FP6 placeholder — mechanically advance one domain and ask
- * the static opening question — so the app still demos without a key.
+ * Routes every user message through the Orchestrator, which dispatches to
+ * the appropriate domain agent, evaluates coverage, and returns the next
+ * question. Falls back to the FP6 placeholder if the Orchestrator throws
+ * (no LLM key, network error, etc.) so the app demos without a key.
  */
-session_start();  // so the agents can read the visitor's per-use API key
+session_start();
 require_once __DIR__ . '/../src/InterviewSession.php';
-require_once __DIR__ . '/../src/RequirementParser.php';
-require_once __DIR__ . '/../src/AgentEngine.php';
+require_once __DIR__ . '/../src/Orchestrator.php';
 
 $id  = $_POST['id'] ?? '';
 $msg = trim($_POST['message'] ?? '');
@@ -35,33 +30,11 @@ if (($session['title'] ?? '') === 'Untitled session') {
 InterviewSession::writeExchange($id, 'user', $msg);
 
 try {
-    $engine = new AgentEngine();
-
-    // ── Routing Agent: is this message about the project, or drift? ──
-    $scope = $engine->classifyScope($id, $msg);
-
-    if (!AgentEngine::route($scope)['advance']) {
-        // OUT-OF-SCOPE (Port): steer back to the current domain, do NOT advance.
-        $domain = AgentEngine::nextOpenDomain(InterviewSession::readDomainState($id)) ?? 'pain_points';
-        InterviewSession::writeExchange($id, 'agent', $engine->redirect($id, $msg, $domain));
-    } else {
-        // IN-SCOPE (Cox): extraction → gate → tailored next question.
-        $parser   = new RequirementParser();
-        $newState = $parser->extract($id, $msg);
-        if ($newState !== null) {
-            InterviewSession::writeDomainState($id, $newState);
-        }
-
-        $state = InterviewSession::readDomainState($id);
-        if (RequirementParser::gate($state)['all_covered']) {
-            InterviewSession::writeExchange($id, 'agent',
-                'That covers all 8 areas — your build plan is ready on the right.');
-        } else {
-            InterviewSession::writeExchange($id, 'agent', $engine->nextQuestion($id, $state));
-        }
-    }
+    $orchestrator = new Orchestrator();
+    $result       = $orchestrator->dispatch($id, $msg);
+    InterviewSession::writeExchange($id, 'agent', $result['response']);
 } catch (Throwable $e) {
-    // ── No key / agent failure → FP6 placeholder behavior ──
+    // No key / agent failure → FP6 placeholder behavior
     advancePlaceholder($id);
 }
 

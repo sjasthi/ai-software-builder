@@ -173,6 +173,24 @@ class InterviewSession
         return $data['domain_state'] ?? self::blankDomainState();
     }
 
+    /** Persist the extracted answer detail for a single domain. */
+    public static function writeDomainAnswer(string $id, string $domain, string $detail): bool
+    {
+        $data = self::readSession($id);
+        if ($data === null) { return false; }
+        if (!isset($data['domain_answers'])) { $data['domain_answers'] = []; }
+        $data['domain_answers'][$domain] = $detail;
+        self::atomicSave($id, $data);
+        return true;
+    }
+
+    /** Return all saved domain answer details, keyed by domain. */
+    public static function readDomainAnswers(string $id): array
+    {
+        $data = self::readSession($id);
+        return $data['domain_answers'] ?? [];
+    }
+
     // ──────────────────── backs the previous-sessions UI ────────────────────
 
     /**
