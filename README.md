@@ -54,9 +54,9 @@ Each domain agent owns one of the 8 requirement domains. It has its own focused 
 
 ## API Key
 
-Get your Claude API key at **console.anthropic.com** → API Keys.
+Supports **Anthropic (Claude)** keys (`sk-ant-...`) from **console.anthropic.com → API Keys**, and **OpenAI (ChatGPT)** keys (`sk-...`) from **platform.openai.com → API Keys**.
 
-Paste it into the key input on the app's landing page. It is held in server memory only — never written to disk.
+Every time you open a new browser tab or window you will be prompted to enter your key. It is stored only in the browser tab's `sessionStorage` — cleared automatically when you close the tab. Nothing is ever written to the server.
 
 ---
 
@@ -74,8 +74,6 @@ Set this before starting the server. The app runs with a scripted mock LLM — s
 
 ```powershell
 cd requirement-orchestrator
-C:\xampp\php\php.exe tests\boundary_deviation_test.php   # 16 passed
-C:\xampp\php\php.exe tests\gate_check_test.php           # 12 passed
+C:\xampp\php\php.exe tests\schema_migration_test.php     # 12 passed
 C:\xampp\php\php.exe tests\session_recovery_test.php     # 11 passed
-C:\xampp\php\php.exe tests\fp7_verification.php          # 19 passed
 ```

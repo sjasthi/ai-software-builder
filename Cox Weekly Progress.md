@@ -59,7 +59,7 @@
 - Uses PHP's built-in curl — no Composer or external SDK needed. Requires `ANTHROPIC_API_KEY` in the environment (or `config/local.php`).
 - Domain definitions added to system prompt so the LLM correctly maps "every morning" → `interaction_model` (scheduled automation).
 - No streaming needed — extraction output is always < 512 tokens; latency is negligible.
-- Run: `C:\xampp\php\php.exe tests\fp7_verification.php` from the `requirement-orchestrator/` folder.
+- Run: `C:\xampp\php\php.exe tests\schema_migration_test.php` and `tests\session_recovery_test.php` from the `requirement-orchestrator/` folder (fp7_verification.php removed — superseded by Orchestrator architecture).
 
 ---
 
@@ -83,7 +83,8 @@
 - **Why 8 agents instead of 1:** A single extractor evaluating all 8 domains generalizes its bar. Each dedicated agent is opinionated — PainPointsAgent won't accept "it's slow" without a consequence; DataSourcesAgent won't accept "we have data" without a named source. Narrower prompts → more accurate extraction.
 - **30-turn eval window:** early concrete answers were falling out of a 6-turn window as conversations grew. Expanding to 30 ensures the agent evaluates the full domain conversation.
 - **Turn cap:** after 5 agent questions on one domain, the Orchestrator force-marks COVERED to prevent loops.
-- Requires an Anthropic key in `config/local.php` (or `ANTHROPIC_API_KEY`); falls back to static opening questions without one.
+- Requires an Anthropic or OpenAI key; falls back to static opening questions without one.
+- **Key handling refactored (post-FP8):** `set_key.php` removed. PHP session storage (`$_SESSION['api_key']`) replaced with browser `sessionStorage` + a per-request PHP static variable (`LlmClientFactory::setRuntimeKey()`). The key is now prompted on every new tab open, passed as a hidden POST field on each message submission, and never written to the server. `session_start()` removed from `post_message.php`.
 - Demo walkthrough: `demoFP8.md`.
 
 ---

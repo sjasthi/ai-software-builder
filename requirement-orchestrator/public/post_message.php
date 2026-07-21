@@ -7,12 +7,18 @@
  * question. Falls back to the FP6 placeholder if the Orchestrator throws
  * (no LLM key, network error, etc.) so the app demos without a key.
  */
-session_start();
 require_once __DIR__ . '/../src/InterviewSession.php';
 require_once __DIR__ . '/../src/Orchestrator.php';
+require_once __DIR__ . '/../src/MySQLPersister.php';
 
 $id  = $_POST['id'] ?? '';
 $msg = trim($_POST['message'] ?? '');
+
+// Key arrives as a plain POST field — used for this request only, never stored.
+$apiKey = trim($_POST['api_key'] ?? '');
+if ($apiKey !== '') {
+    \LlmClientFactory::setRuntimeKey($apiKey);
+}
 
 $session = InterviewSession::readSession($id);
 if ($session === null || $msg === '') {
@@ -28,11 +34,14 @@ if (($session['title'] ?? '') === 'Untitled session') {
 
 // Record the user's answer.
 InterviewSession::writeExchange($id, 'user', $msg);
+MySQLPersister::ensureSession($id);
+MySQLPersister::logExchange($id, 'user', $msg);
 
 try {
     $orchestrator = new Orchestrator();
     $result       = $orchestrator->dispatch($id, $msg);
     InterviewSession::writeExchange($id, 'agent', $result['response']);
+    MySQLPersister::logExchange($id, 'agent', $result['response']);
 } catch (Throwable $e) {
     // No key / agent failure → FP6 placeholder behavior
     advancePlaceholder($id);

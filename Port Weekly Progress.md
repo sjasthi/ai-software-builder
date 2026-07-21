@@ -91,11 +91,10 @@
 
 ### Notes
 - The explicit `classifyScope`/`redirect` branch from the original FP8 implementation was removed when the Orchestrator pattern replaced AgentEngine. The turn cap achieves the same safety property (off-topic messages cannot loop a domain indefinitely) without the extra LLM classification call per turn.
-- `boundary_deviation_test.php` still passes 16/16 — the pure routing logic it tests remains valid.
-- `gate_check_test.php` still passes 12/12 — gate logic unchanged.
+- `boundary_deviation_test.php`, `gate_check_test.php`, and `fp7_verification.php` have been removed — they tested AgentEngine and RequirementParser which no longer exist.
+- Remaining tests: `schema_migration_test.php` (12 passed) and `session_recovery_test.php` (11 passed).
 - Fails safe: any Orchestrator error drops to the FP6 placeholder (mechanical advance + static question), so the app stays demoable without a key.
-- Run: `C:\xampp\php\php.exe tests\boundary_deviation_test.php` from `requirement-orchestrator/`.
-  Full walkthrough in `demoFP8.md`.
+- Full walkthrough in `demoFP8.md`.
 
 ---
 

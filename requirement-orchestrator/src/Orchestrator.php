@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/InterviewSession.php';
 require_once __DIR__ . '/LlmClient.php';
+require_once __DIR__ . '/MySQLPersister.php';
 require_once __DIR__ . '/agents/DomainAgent.php';
 require_once __DIR__ . '/agents/PainPointsAgent.php';
 require_once __DIR__ . '/agents/DataSourcesAgent.php';
@@ -72,6 +73,8 @@ class Orchestrator
             if (($result['detail'] ?? '') !== '') {
                 InterviewSession::writeDomainAnswer($sessionId, $activeKey, $result['detail']);
             }
+            $allAnswers = InterviewSession::readDomainAnswers($sessionId);
+            MySQLPersister::updateDomain($sessionId, $activeKey, $result['detail'] ?? '', $allAnswers);
         }
 
         // Check if all domains are now covered after this update

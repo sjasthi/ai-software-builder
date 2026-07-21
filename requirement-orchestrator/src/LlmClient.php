@@ -9,7 +9,7 @@
  *      stronger for question writing).
  *
  * Adding a new provider later = write one class that implements LlmClient and add
- * a line to config. The agents (RequirementParser, AgentEngine) never change.
+ * a line to config. The domain agents and Orchestrator never change.
  *
  * Uses PHP's built-in curl — no Composer or external SDK required.
  * Configure a key via the ANTHROPIC_API_KEY env var or config/local.php.
@@ -29,8 +29,7 @@ interface LlmClient
 }
 
 /**
- * Anthropic (Claude) provider. This is the curl block that used to live inline in
- * RequirementParser, lifted out unchanged so every agent shares one transport.
+ * Anthropic (Claude) provider. All domain agents share this transport.
  */
 class AnthropicClient implements LlmClient
 {
@@ -167,11 +166,8 @@ class ScriptedLlm implements LlmClient
     }
 
     /**
-     * Return the 8-domain JSON RequirementParser expects. Conservative on purpose:
-     * cross off only ONE domain per turn, and only when the answer is substantive.
-     * This keeps the mock interview thorough — it needs a real answer for each of
-     * the 8 domains instead of crossing several off from one sentence — and a
-     * vague answer advances nothing, so the next question re-probes for detail.
+     * Simulate domain agent evaluation. Conservative on purpose: cross off only
+     * ONE domain per turn, and only when the answer is substantive.
      */
     private function mockExtract(string $system, string $userMsg): string
     {
@@ -332,26 +328,34 @@ class LlmClientFactory
         return self::mockEnabled(self::config());
     }
 
+    /** Runtime key set from $_POST per-request — never stored anywhere. */
+    private static string $runtimeKey = '';
+
+    /**
+     * Set the API key for this request only. Called by post_message.php with
+     * the key the user passed as a hidden form field. Stored in a static variable
+     * (process memory only — gone when the request ends, never written to disk or
+     * PHP session).
+     */
+    public static function setRuntimeKey(string $key): void
+    {
+        self::$runtimeKey = trim($key);
+    }
+
     /**
      * Resolve the API key for a provider, most-trusted source first:
-     *   1. the provider's env var (ANTHROPIC_API_KEY / OPENAI_API_KEY),
-     *   2. the per-use key a user typed on the launch page (server session only —
-     *      never written to disk or the session JSON files); it applies to the
-     *      active provider,
-     *   3. config/local.php providers.<provider>.api_key (Anthropic also accepts
-     *      the legacy FP7 flat 'api_key').
+     *   1. runtime key set this request from $_POST (never persisted),
+     *   2. the provider's env var (ANTHROPIC_API_KEY / OPENAI_API_KEY),
+     *   3. config/local.php providers.<provider>.api_key
      */
     private static function providerKey(string $provider, array $cfg): string
     {
+        if (self::$runtimeKey !== '') { return self::$runtimeKey; }
         $envName = $provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
         $env = getenv($envName);
         if (is_string($env) && $env !== '') { return $env; }
-        // Per-use key from the launch page (only present after session_start()).
-        if (!empty($_SESSION['api_key'])) { return (string) $_SESSION['api_key']; }
-        // ['providers' => ['<provider>' => ['api_key' => '...']]]
         $new = $cfg['providers'][$provider]['api_key'] ?? '';
         if ($new !== '') { return $new; }
-        // Legacy flat shape from FP7 (Anthropic only): ['api_key' => '...']
         return $provider === 'anthropic' ? ($cfg['api_key'] ?? '') : '';
     }
 

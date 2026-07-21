@@ -95,6 +95,7 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
 
             <form id="input-area" method="post" action="post_message.php" autocomplete="off">
                 <input type="hidden" name="id" value="<?= htmlspecialchars($id) ?>">
+                <input type="hidden" name="api_key" id="api_key_field" value="">
                 <div class="input-group">
                     <input type="text" name="message" class="form-control" placeholder="Type your answer…"
                            aria-label="Your answer" <?= $complete ? 'disabled' : 'autofocus' ?>>
@@ -118,12 +119,71 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
     </div><!-- /row -->
 </div><!-- /app -->
 
+<!-- API key modal — shown if no key is in sessionStorage -->
+<div class="modal fade" id="keyModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Enter your API key to continue</h5>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Your key is stored only in this browser tab and cleared when you close it.</p>
+                <form id="modal-key-form" autocomplete="off">
+                    <div class="input-group">
+                        <input type="password" id="modal-key-input" class="form-control"
+                               placeholder="sk-ant-... or sk-..." required>
+                        <button class="btn btn-primary" type="submit">Continue&nbsp;→</button>
+                    </div>
+                    <div id="modal-key-error" class="text-danger small mt-1" style="display:none;">Please enter a valid key.</div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     // Keep the chat scrolled to the latest message.
     var cs = document.getElementById('chat-stream');
     if (cs) { cs.scrollTop = cs.scrollHeight; }
+
+    // Inject API key from sessionStorage into hidden field before each submit.
+    (function () {
+        var keyField  = document.getElementById('api_key_field');
+        var modalEl   = document.getElementById('keyModal');
+        var modalForm = document.getElementById('modal-key-form');
+        var modalInput = document.getElementById('modal-key-input');
+        var modalErr  = document.getElementById('modal-key-error');
+        var modal     = new bootstrap.Modal(modalEl);
+
+        function applyKey(key) {
+            sessionStorage.setItem('api_key', key);
+            if (keyField) keyField.value = key;
+        }
+
+        var stored = sessionStorage.getItem('api_key');
+        if (stored) {
+            applyKey(stored);
+        } else {
+            // No key — show modal and block the form until key is entered.
+            modal.show();
+            modalEl.addEventListener('shown.bs.modal', function () {
+                if (modalInput) modalInput.focus();
+            });
+        }
+
+        if (modalForm) {
+            modalForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                var key = (modalInput ? modalInput.value : '').trim();
+                if (!key) { if (modalErr) modalErr.style.display = ''; return; }
+                if (modalErr) modalErr.style.display = 'none';
+                applyKey(key);
+                modal.hide();
+            });
+        }
+    })();
 </script>
 </body>
 </html>

@@ -22,8 +22,7 @@ class InterviewSession
         'stakeholders', 'audience_type', 'current_process', 'interaction_model',
     ];
 
-    /** Opening question for each domain (non-LLM fallback used until the
-     *  Routing Agent / RequirementParser take over at FP7–FP8). */
+    /** Opening question for each domain (non-LLM fallback when no client is configured). */
     const OPENING = [
         'pain_points'       => "What specific problem are you trying to solve?",
         'data_sources'      => "What information or data does this software need to work with?",

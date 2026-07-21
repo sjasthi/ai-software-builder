@@ -39,7 +39,6 @@ Our app interviews a person about the software they want built. It works across 
 | `src/agents/InteractionModelAgent.php` | Focuses only on: trigger type and frequency. |
 | `src/LlmClient.php` | The "phone line" to the AI. All AI calls go through here — switch Claude↔OpenAI in one config line. |
 | `tests/boundary_deviation_test.php` | Automated proof that off-topic messages don't corrupt domain state. |
-| `public/set_key.php` | Saves the visitor's own AI key in server memory only (never to disk). |
 | `config/local.php.example` | Template for optional settings (AI model per task, demo mode). |
 
 **Changed files**
@@ -74,19 +73,17 @@ Stop the app with **Ctrl+C**. Turn demo mode off with `$env:LLM_MOCK = "0"`.
 
 ## Optional: run it on the real AI 🔑
 
-Each person uses their **own** Anthropic key — you never pay for the whole class. Get your key at **console.anthropic.com → API Keys**. Turn demo mode **off** (`$env:LLM_MOCK = "0"`), start the app, then on the launch page:
-1. Paste your key into **"Enter your Anthropic API key to begin"** and click **Begin**.
-2. Click **Start New Session** — questions are now written live by the AI, tailored to what you actually said.
+Each person uses their **own** key — you never pay for the whole class. Supports **Anthropic (Claude)** keys from **console.anthropic.com → API Keys** and **OpenAI (ChatGPT)** keys from **platform.openai.com → API Keys**.
 
-Your key is held only in the server's memory for that browser visit — **never saved to disk.** Click **clear key** (or close the browser) to remove it.
+Turn demo mode **off** (`$env:LLM_MOCK = "0"`), open the site, and enter your key in the form that appears. The key is stored only in the browser tab's `sessionStorage` — **never sent to a server session or saved to disk.** It is cleared automatically when you close the tab. Opening a new tab requires re-entering the key.
 
 ---
 
 ## Proof it works (automated tests — no key needed)
 
 ```powershell
-C:\xampp\php\php.exe tests\boundary_deviation_test.php   # expect: 16 passed, 0 failed
-C:\xampp\php\php.exe tests\gate_check_test.php           # expect: 12 passed, 0 failed
+C:\xampp\php\php.exe tests\schema_migration_test.php     # expect: 12 passed, 0 failed
+C:\xampp\php\php.exe tests\session_recovery_test.php     # expect: 11 passed, 0 failed
 ```
 
 ## If something looks off
