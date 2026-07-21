@@ -1,37 +1,37 @@
-# Design note — storing agent definitions (post-FP8, for class discussion)
+# Design note — storing agent definitions
 
-**Status:** parked for a team decision. **Not required for FP8** — the routing agent and
-per-use key are complete and correct no matter where agent definitions live. This is an
-*additive* refactor we can do later without changing any routing logic.
+**Status:** Decision made and implemented. **Not a pending question.**
 
-## The idea (Kenan)
-Agents should be **pre-built and stored** — either in the **database schema** or **in the
-program** — and the runtime just loads and runs each one, **regardless of which AI model** is used.
+## The question (Kenan, post-FP8)
 
-## What's already true
-- **Model-agnostic: done.** All AI calls go through `src/LlmClient.php`, so any model (or the
-  free mock) can drive any agent. Model choice is config, not code.
-- **Agents are pre-built** as PHP classes: the Extraction Agent (`src/RequirementParser.php`)
-  and the Routing Agent (`src/AgentEngine.php`).
+Agents should be **pre-built and stored** — either in the **database schema** or **in the program** — and the runtime just loads and runs each one, regardless of which AI model is used.
 
-## What's still inline (the thing to externalize)
-Each agent's **definition = its prompt/instructions** is currently a hardcoded string inside
-the class methods:
-- extraction prompt → `RequirementParser::extract()`
-- scope / question / redirect prompts → `AgentEngine::classifyScope()`, `nextQuestion()`, `redirect()`
+## Decision: program files (PHP classes), one per domain
 
-The refactor: pull those prompts into **one stored registry** and have the classes load their
-definition from it (each agent = name + task + prompt template + default model).
+Agents are implemented as PHP classes in `src/agents/`:
 
-## Options to decide in class
-| Option | What it means | Trade-off |
-|--------|---------------|-----------|
-| **Program file** (e.g. `config/agents.php`) | One PHP/JSON file holds every agent's prompt; classes read from it. | Simplest; fits our current file-based (JSON) runtime; no DB needed at runtime. |
-| **MySQL schema** (an `agents` table) | Add + seed an `agents` table in `config/schema.sql`; agents load their prompt from the DB. | Matches the "database schema" phrasing, but needs a live DB connection at runtime (our app currently persists to JSON files, not MySQL). |
+```
+src/agents/
+├── DomainAgent.php          ← abstract base (shared evaluate + nextQuestion logic)
+├── PainPointsAgent.php
+├── DataSourcesAgent.php
+├── DataAccessAgent.php
+├── EndResultAgent.php
+├── StakeholdersAgent.php
+├── AudienceTypeAgent.php
+├── CurrentProcessAgent.php
+└── InteractionModelAgent.php
+```
 
-## Questions for the team
-1. Does the professor want agent definitions in the **DB schema** specifically, or is a stored
-   **program file** acceptable (given runtime uses JSON files, not MySQL)?
-2. Should the registry also hold each agent's **default model** (so "best-fit model per task"
-   lives beside the agent definition)?
-3. Any agents beyond Extraction + Routing to pre-register now (e.g. the future Compiler Agent)?
+Each agent class contains its own prompt definitions inline (extraction prompt + question generation prompt). The `Orchestrator` instantiates all 8 at startup and routes to the active one per turn.
+
+## Why program files over a database table
+
+- **No DB needed at runtime.** The app persists sessions as JSON files. Adding a live DB dependency just to load prompt strings adds latency and a failure mode for no gain.
+- **Self-contained.** Each agent class is its own unit — prompt, covered criteria, fallback question, and LLM call logic in one place. Readable and independently testable.
+- **Model-agnostic: already done.** All LLM calls go through `src/LlmClient.php`. Switching models is one line in `config/local.php` — the agent classes don't change.
+- **Simpler to modify.** Editing a domain's extraction criteria means opening one file, not running a DB migration.
+
+## What's still configurable
+
+Per-task model assignment lives in `config/local.php` (`task_models` key) — not hardcoded in the agent classes. So "use Opus for extraction, Haiku for question generation" is a config change, not a code change.

@@ -77,7 +77,7 @@
 ---
 
 ## FP8 — Week 10 | Due: Jul 20
-**Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test
+**Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test. Architecture subsequently upgraded to Orchestrator-Workers.
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
@@ -85,28 +85,15 @@
 > question-generation half is logged in `Cox Weekly Progress.md`._
 
 ### What Was Added
-- `src/AgentEngine.php` — Routing Agent, **out-of-scope branch**. `route()` is the pure
-  decision function: a scope label in, `{advance, action}` out — anything that isn't an
-  explicit `OUT_OF_SCOPE` is treated as in-scope so a mis-classification never traps the
-  user. `classifyScope()` (LLM) labels the latest turn `IN_SCOPE`/`OUT_OF_SCOPE` and fails
-  toward `IN_SCOPE`. `redirect()` (LLM, with a template fallback) steers a drifted user back
-  to the current domain **without touching `domain_state`** — the progress bar cannot move
-  on off-topic input. `nextOpenDomain()` is the shared pure helper.
-- `public/post_message.php` — wired the branch into the live chain: `classifyScope → route`;
-  on no-advance it appends only a redirect turn (no extraction, no `writeDomainState`).
-- `tests/boundary_deviation_test.php` — boundary deviation proof. No live LLM (routing is
-  pure; LLM calls take an injected fake client). Proves: drift routes to no-advance and
-  leaves `domain_state` **byte-for-byte unchanged**, in-scope is allowed to advance, junk
-  labels never trap the user, and both LLM branches fall back to templates with no key.
-  **Result: 16 passed, 0 failed.**
+- `src/AgentEngine.php` — Routing Agent with out-of-scope branch. `classifyScope()` labelled turns `IN_SCOPE`/`OUT_OF_SCOPE`; `redirect()` steered drifted users back without touching `domain_state`. This was the original FP8 implementation.
+- `tests/boundary_deviation_test.php` — boundary deviation proof. Proves drift leaves `domain_state` byte-for-byte unchanged and in-scope is allowed to advance. **Result: 16 passed, 0 failed.**
+- `src/Orchestrator.php` *(architecture upgrade)* — replaced the AgentEngine + RequirementParser pipeline. Off-topic handling is now absorbed by the **turn cap**: after 5 agent questions on one domain the Orchestrator force-marks COVERED and advances, rather than classifying and redirecting. The boundary deviation test still passes because domain state is never written on non-covered turns.
 
 ### Notes
-- Same seam split as FP7: the **pure decision logic** (`route`, `nextOpenDomain`) is
-  independent of the LLM, so the proof runs today by injecting scope labels / a fake client —
-  no key required. The gate refactor kept `RequirementParser`'s public API identical, so
-  `gate_check_test.php` still passes **12/12** (verified).
-- Fails safe: a missing key or any agent error drops the controller to the FP6 placeholder
-  (mechanical advance + static question), so the app always stays demoable.
+- The explicit `classifyScope`/`redirect` branch from the original FP8 implementation was removed when the Orchestrator pattern replaced AgentEngine. The turn cap achieves the same safety property (off-topic messages cannot loop a domain indefinitely) without the extra LLM classification call per turn.
+- `boundary_deviation_test.php` still passes 16/16 — the pure routing logic it tests remains valid.
+- `gate_check_test.php` still passes 12/12 — gate logic unchanged.
+- Fails safe: any Orchestrator error drops to the FP6 placeholder (mechanical advance + static question), so the app stays demoable without a key.
 - Run: `C:\xampp\php\php.exe tests\boundary_deviation_test.php` from `requirement-orchestrator/`.
   Full walkthrough in `demoFP8.md`.
 

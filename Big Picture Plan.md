@@ -9,8 +9,8 @@ A PHP web application that conducts an adaptive interview with a user through 8 
 
 **This system is the product. It does not build the software itself. It produces the plan that builds the software.**
 
-**Agentic Workflow Pattern: Prompt Chaining with Routing**
-This system implements two complementary patterns from Anthropic's *Building Effective Agents* framework. **Prompt chaining** is the primary structure — every user message passes through a fixed sequence of LLM calls where each call processes the output of the previous one, with a programmatic gate (the 8-domain coverage check) ensuring the process stays on track before advancing. **Routing** is layered on top — at the AgentEngine step, every input is classified as either in-scope (route to domain-targeting question) or out-of-scope (route to drift redirection), with entirely different downstream behavior for each path. Together these two patterns produce a system that is both predictable in structure and adaptive in behavior.
+**Agentic Workflow Pattern: Orchestrator-Workers**
+This system implements the **Orchestrator-Workers** pattern from Anthropic's *Building Effective Agents* framework. A central Orchestrator receives each user message, identifies which domain agent should be active (the first OPEN domain), and delegates to that specialized agent for both evaluation and question generation. Each of the 8 domain agents is a worker with a narrow, focused responsibility — it knows exactly what "covered" means for its domain and probes for that specific detail across multiple turns before marking it satisfied. The Orchestrator manages state transitions between agents and triggers the Compiler Agent when all 8 are COVERED.
 
 ---
 
@@ -42,41 +42,50 @@ The interview cannot terminate until all 8 domains are marked `COVERED` by the L
 
 ---
 
-## 2. Agentic Workflow Pattern: Prompt Chaining with Routing
+## 2. Agentic Workflow Pattern: Orchestrator-Workers
 
-### 2a. Why These Two Patterns
+### 2a. Why Orchestrator-Workers
 
-**Prompt Chaining** is used because the task decomposes cleanly into a fixed sequence of steps: extract what the user said → check the gate → generate the next question → repeat until all 8 domains are covered → compile the output. Each LLM call is smaller and more focused than a single monolithic call would be, which produces higher accuracy at each step. The 8-domain coverage check is the programmatic gate — the chain cannot advance to the Compiler Agent until all 8 domains return `COVERED`.
+Each of the 8 requirement domains has distinct expertise requirements. What makes a pain point "covered" is completely different from what makes an interaction model "covered" — the PainPoints agent needs a specific problem plus a real consequence; the InteractionModel agent needs a trigger type and frequency. A single extraction agent evaluating all 8 domains in one LLM call must split its attention across 8 different definitions of "done," which produces shallow coverage and premature COVERED marks.
 
-**Routing** is layered on top because the AgentEngine step has two fundamentally different downstream behaviors depending on input classification. In-scope input routes to a domain-targeting question. Out-of-scope input routes to a drift redirection prompt. These require different prompts and produce different outputs — routing handles the separation cleanly without complicating the chain.
+**Orchestrator-Workers** solves this by giving each domain its own dedicated agent with:
+- A focused extraction prompt that specifies exactly what "covered" means for that domain
+- A focused question generation prompt that probes only for what that domain needs
+- Multi-turn capability — the agent stays active on its domain until the bar is met, not just for one exchange
 
-### 2b. The Prompt Chain Flow
+The Orchestrator handles state: it knows which domain is active, delegates to that agent, writes COVERED + saves the extracted detail when satisfied, and advances to the next agent. A turn cap (5 agent questions per domain) prevents any agent from looping indefinitely.
+
+### 2b. The Orchestrator-Workers Flow
 
 ```
 User Message
      │
      ▼
 ┌─────────────────────────────────────────┐
-│  STEP 1: EXTRACTION (RequirementParser) │  ← LLM Call #1
-│  Input:  user message + domain state    │
-│  Output: updated domain JSON            │
-│  Mode:   JSON mode enforced             │
+│  ORCHESTRATOR                           │
+│  Identifies active domain (first OPEN)  │
 └─────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────────┐
-│  PROGRAMMATIC GATE: COVERAGE CHECK      │  ← No LLM, pure logic
-│  All 8 domains COVERED?                 │
-│  YES → skip to Compiler Agent           │
-│  NO  → continue to Routing step         │
+│  ACTIVE DOMAIN AGENT (1 of 8)           │  ← LLM Call #1
+│  evaluate(message, full_transcript)     │
+│  → covered: bool, detail: string        │
 └─────────────────────────────────────────┘
-     │ NO
+     │
      ▼
 ┌─────────────────────────────────────────┐
-│  STEP 2: ROUTING (AgentEngine)          │  ← LLM Call #2
-│  Classify input:                        │
-│    IN-SCOPE  → domain-targeting question│
-│    OFF-SCOPE → drift redirection prompt │
+│  ORCHESTRATOR: Write State              │
+│  If covered → writeDomainState(COVERED) │
+│               writeDomainAnswer(detail) │
+│  After 5 agent turns → force COVERED   │
+└─────────────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────────┐
+│  NEXT DOMAIN AGENT                      │  ← LLM Call #2
+│  nextQuestion(full_transcript)          │
+│  → focused probing question             │
 └─────────────────────────────────────────┘
      │
      ▼
@@ -85,18 +94,13 @@ User Message
 │  Domain matrix updated in UI            │
 │  Loop restarts on next user message     │
 └─────────────────────────────────────────┘
-     │ (when gate = ALL COVERED)
+     │ (when all 8 COVERED)
      ▼
 ┌─────────────────────────────────────────┐
-│  STEP 3: COMPILATION (ManifestGenerator)│  ← LLM Call #3
-│  Input:  finalized 8-domain data        │
-│  Output: sequenced 5-prompt build plan  │
+│  COMPILER AGENT (ManifestGenerator)     │  ← LLM Call #3
+│  readDomainAnswers() → 5-prompt plan    │
 └─────────────────────────────────────────┘
 ```
-
-**Why not Orchestrator-Workers:** That pattern is for tasks where the subtasks cannot be predicted ahead of time. This system's subtasks are always the same 8 domains in a defined sequence — full predictability makes prompt chaining the correct fit.
-
-**Why not full autonomous Agents:** Agents are for open-ended problems where the path cannot be hardcoded. This system's path is fixed. The intelligence lives in how each step responds, not in deciding what steps to take.
 
 ---
 
@@ -106,82 +110,68 @@ User Message
 /requirement-orchestrator/
 │
 ├── config/
-│   └── database.php              # DB connection pooling & shared utilities
+│   └── database.php              # DB connection & shared utilities
 │
-├── src/                          # The Four Agent Modules
-│   ├── InterviewSession.php      # SNAPSHOT AGENT: Persists session state & conversation history
-│   ├── RequirementParser.php     # EXTRACTION AGENT: LLM call → maps user text to 8 domains → returns JSON
-│   ├── AgentEngine.php           # ROUTING AGENT: LLM call → generates next adaptive question
-│   └── ManifestGenerator.php    # COMPILER AGENT: Assembles verified domain data into prompt build plan
+├── src/
+│   ├── InterviewSession.php      # SNAPSHOT AGENT: session state, transcript, domain answers
+│   ├── Orchestrator.php          # ORCHESTRATOR: routes messages to active domain agent
+│   ├── agents/
+│   │   ├── DomainAgent.php       # Abstract base: shared evaluate() + nextQuestion() logic
+│   │   ├── PainPointsAgent.php   # Covers: specific problem + consequence + one concrete detail
+│   │   ├── DataSourcesAgent.php  # Covers: named APIs, DBs, or file types
+│   │   ├── DataAccessAgent.php   # Covers: push/pull/upload method + frequency
+│   │   ├── EndResultAgent.php    # Covers: concrete output format and content
+│   │   ├── StakeholdersAgent.php # Covers: named owner/role with accountability
+│   │   ├── AudienceTypeAgent.php # Covers: user type + technical level
+│   │   ├── CurrentProcessAgent.php  # Covers: named current steps or tools being replaced
+│   │   └── InteractionModelAgent.php # Covers: trigger type + frequency
+│   ├── LlmClient.php             # Provider abstraction (Claude, OpenAI, mock)
+│   └── ManifestGenerator.php     # COMPILER AGENT: 5-prompt build plan (FP9)
 │
-└── public/                       # User-Facing Layer
-    ├── index.php                 # Split-pane UI: Chat Interface + Live Domain Coverage Matrix
-    ├── endpoint.php              # Unified Controller: Routes AJAX payloads through agent pipeline
+└── public/
+    ├── index.php                 # Split-pane UI: chat + live domain matrix
+    ├── post_message.php          # Controller: calls Orchestrator::dispatch() on each submit
     └── js/
-        └── app.js                # Async Pipeline: UI lockdown, AJAX calls, badge state updates
+        └── app.js                # AJAX pipeline: UI lockdown, badge updates
 ```
 
-**Why four separate agents:** Each agent has a single non-overlapping responsibility. The Extraction Agent answers *what did the user just tell us?* The Routing Agent answers *what should we ask next?* The Snapshot Agent answers *what have we collected so far?* The Compiler Agent answers *how do we turn verified data into an executable plan?* Separating these allows each to be built, tested, and replaced independently without breaking the others.
+**Why one agent per domain:** Each domain has a different definition of "covered." A single extractor evaluating all 8 at once must generalize its bar, which produces shallow answers. Dedicated agents can be opinionated — PainPointsAgent won't accept "it's slow" without a concrete consequence; DataSourcesAgent won't accept "we have data" without a named source. Narrower system prompts produce more accurate extraction, and each agent can probe its domain across multiple turns before advancing.
 
 ---
 
 ## 3. LLM Prompt Architecture (Agent Intelligence Layer)
 
-All agentic behavior lives in these prompt templates. They are the functional specification of what the system actually does intelligently.
+Each domain agent has two prompt types. These are the functional specification of what the system does intelligently.
 
-### 3a. Extraction Agent System Prompt (RequirementParser.php)
+### 3a. Extraction Prompt (per domain agent)
 
-```
-You are a requirement extraction engine. Evaluate the user's latest message
-against the 8 architectural domains and determine which have been addressed.
+Each agent's extraction prompt is domain-specific and opinionated. The key difference from a single shared extractor: each agent defines its own binary covered/not-covered rule. The LLM evaluates the **full conversation** (up to 30 turns) and returns:
 
-Current domain state:
-{domain_state_json}
-
-User's latest message:
-"{user_input}"
-
-Return ONLY a valid JSON object using this exact schema with no prose,
-explanation, or markdown fencing:
-{
-  "pain_points":       "COVERED" | "OPEN",
-  "data_sources":      "COVERED" | "OPEN",
-  "data_access":       "COVERED" | "OPEN",
-  "end_result":        "COVERED" | "OPEN",
-  "stakeholders":      "COVERED" | "OPEN",
-  "audience_type":     "COVERED" | "OPEN",
-  "current_process":   "COVERED" | "OPEN",
-  "interaction_model": "COVERED" | "OPEN"
-}
-
-Rules:
-- Only update domains the user explicitly addressed. Do not infer or assume.
-- Domains already marked COVERED must remain COVERED.
-- A domain is COVERED only when the user provides concrete, specific detail.
+```json
+{"covered": true|false, "detail": "one-line summary of what was learned"}
 ```
 
-### 3b. Routing Agent System Prompt (AgentEngine.php)
+Example — PainPointsAgent covered rule:
+```
+COVERED means ALL THREE present anywhere in the conversation:
+1. A specific problem is named (not just "inefficiency")
+2. A consequence is described (lost revenue, errors, missed orders, etc.)
+3. At least one concrete detail: a number, frequency, dollar amount, or scenario
+
+Once all three are present, mark COVERED immediately.
+```
+
+The `detail` string is saved via `InterviewSession::writeDomainAnswer()` and used by the Compiler Agent to populate the build plan.
+
+### 3b. Question Generation Prompt (per domain agent)
+
+Each agent's question prompt knows only about its own domain. It injects the recent transcript and generates one focused probing question targeting exactly what's still missing for that domain.
 
 ```
-You are an adaptive software requirements interviewer. Ask the next most
-logical clarifying question to help the user define their software.
-
-Active transcript:
-{conversation_history}
-
-Current domain coverage:
-{domain_state_json}
-
-User's inferred technical level: {technical_level}
-
-Rules:
-- Ask exactly one question. No compound questions.
-- Only target OPEN domains. Never revisit COVERED domains.
-- If the user's message is off-topic (marketing, legal, branding), do not
-  advance any domain. Generate one redirection prompt back to software scope.
-- Match vocabulary to technical level. Plain language for non-technical
-  users. Precise terminology for developers.
-- Output only the question. No preamble, no acknowledgment, no filler.
+You are interviewing a user about [domain] — [domain description].
+You need: [specific criteria for this domain].
+Ask one focused question. Reference what they've already said.
+Output only the question text.
 ```
 
 ### 3c. Compiler Agent Output Format (ManifestGenerator.php)
@@ -298,33 +288,32 @@ Build `src/InterviewSession.php`. This agent handles four operations: creating a
 
 ---
 
-### Week 3: Extraction Agent & LLM Semantic Evaluation
-*(Prompt Chain — Step 1)*
+### Week 3: Domain Agents & Orchestrator
+*(Orchestrator-Workers — Core Intelligence)*
 
 **Implementation Objective:**
-Build `src/RequirementParser.php`. This is Step 1 of the prompt chain. It constructs the Section 4a system prompt, injects the user's latest message and current domain JSON state, and calls the LLM API using **JSON mode** (structured output enforcement). The returned JSON is validated against the 8-domain schema before being written to the database via the Snapshot Agent. After writing, the agent performs the **programmatic gate check** — if all 8 domains equal `COVERED`, the chain skips the Routing step and triggers the Compiler Agent directly.
+Build `src/agents/DomainAgent.php` (abstract base) and 8 concrete domain agents, plus `src/Orchestrator.php`. Each domain agent implements two methods: `evaluate()` evaluates the full conversation and returns `{covered, detail}`; `nextQuestion()` generates one focused probing question for its domain. The Orchestrator's `dispatch()` method: reads session state, finds the first OPEN domain, calls that agent's `evaluate()`, writes COVERED + `writeDomainAnswer(detail)` when satisfied, then calls `nextQuestion()` on the now-active agent.
 
-**Why LLM extraction over keyword matching:** Keyword matching fails on paraphrase and multi-domain statements. A user saying *"I want to pull my inventory from a Shopify API every morning"* simultaneously covers Data Sources, Data Access, and Interaction Model in one sentence. No static rule set reliably detects this. LLM semantic evaluation handles natural language at a level rules cannot.
+**Why one agent per domain:** Each domain has a different definition of "covered." A single extractor splitting attention across 8 criteria generalizes its bar, which produces shallow answers. Dedicated agents are opinionated — PainPointsAgent won't accept "it's slow" without a consequence; DataSourcesAgent won't accept "we have data" without a named source.
 
-**Why JSON mode is mandatory:** Without structured output enforcement, the LLM may wrap its response in prose or markdown fencing, which breaks the JSON parser and corrupts domain state. JSON mode guarantees a machine-readable response on every call — a requirement for a programmatic gate to function reliably.
+**Why evaluate the full transcript:** Early concrete answers fall out of a short window as the conversation grows. Each agent evaluates up to 30 turns so detail given 10 exchanges ago still counts toward coverage.
 
-**Verification Proof:** Pass *"I want to automatically pull my inventory from a Shopify API every morning"* through the agent. It passes if the LLM returns a schema-compliant JSON object marking `data_sources`, `data_access`, and `interaction_model` as `COVERED` in a single pass, the database reflects those changes immediately, and the gate check correctly identifies that 5 domains remain `OPEN` and does not trigger the Compiler Agent.
+**Turn cap:** After 5 agent questions on the same domain, the Orchestrator force-marks it COVERED to prevent infinite loops.
+
+**Verification Proof:** Pass *"I want to automatically pull my inventory from a Shopify API every morning"* through the Orchestrator. DataSourcesAgent, DataAccessAgent, and InteractionModelAgent should each mark COVERED. The remaining 5 domains stay OPEN and the Compiler Agent is not triggered.
 
 ---
 
-### Week 4: Routing Agent & Adaptive Question Generation
-*(Prompt Chain — Step 2 with Routing)*
+### Week 4: Adaptive Question Generation & Domain Probing
 
 **Implementation Objective:**
-Build `src/AgentEngine.php`. This is Step 2 of the prompt chain and is where the **routing pattern** is implemented. The agent constructs the Section 4b system prompt, injects the full transcript and current domain state, and calls the LLM API to classify the user's input and generate a response. The routing decision has two branches: if the input is in-scope, the LLM generates a domain-targeting question aimed at the next `OPEN` domain; if the input is out-of-scope (marketing, legal, branding), the LLM generates a drift redirection prompt without advancing any domain states. These are two entirely different downstream outputs handled by a single classification step.
+Each domain agent's `nextQuestion()` method generates a probing follow-up tailored to what the user has already said — not a generic script. The question generation prompt injects the recent transcript so the agent can reference specific details the user gave and push for what's still missing in that domain.
 
-**Why routing instead of two separate prompts:** A separate out-of-scope detector would require an extra LLM call before every routing decision. Combining classification and response generation into a single prompt keeps the chain at two LLM calls per turn instead of three, reducing latency and cost without sacrificing accuracy.
+**Why dynamic generation over a scripted question tree:** A fixed sequence cannot adapt when a user partially covers a domain or answers obliquely. LLM-generated questions target exactly what's still missing for that specific domain in real time.
 
-**Why dynamic generation over a scripted question tree:** A fixed sequence cannot adapt when a user covers multiple domains in one message or answers out of order. LLM-generated questions target exactly what is still missing in real time, shortening the interview and producing more specific, usable answers.
+**Why domain-scoped question prompts:** A question prompt that knows only about its own domain produces more focused, specific questions than a general "ask about OPEN domains" prompt. The DataSourcesAgent asks about API names and formats; it doesn't wander into stakeholder questions.
 
-**Why this agent is separate from the Extraction Agent:** RequirementParser answers *what did the user just tell us?* AgentEngine answers *what should we ask next?* These are distinct steps in the chain. Separating them means each can be modified, tested, or swapped independently without breaking the other.
-
-**Verification Proof:** Run a boundary deviation test. Feed the engine *"How do I run marketing ads for this?"* The routing step passes if the LLM classifies this as out-of-scope, generates a redirection prompt back to software architecture, and a database read confirms all 8 domain states are unchanged — proving the routing branch fired correctly and the chain did not advance.
+**Verification Proof:** Run a boundary deviation test. Confirm that an off-topic message (e.g., "How do I run marketing ads?") does not advance any domain state — the turn cap absorbs it and no COVERED flag is written.
 
 ---
 
@@ -386,10 +375,10 @@ Take a raw software idea through the full interview until the 5-prompt build pla
 
 1. User opens the application and sees the split-pane interface
 2. User types: *"I want to build an inventory management tool for my small business"*
-3. The Extraction Agent identifies Pain Points as `COVERED`. The right panel badge flips live.
-4. The Routing Agent generates: *"What data does your inventory system need to track — products, suppliers, stock levels, or something else?"*
-5. The interview continues. Domain badges flip from `○` to `✓` in real time as requirements are covered.
-6. All 8 domains reach `COVERED`. The right panel transitions to display the 5-prompt build plan.
+3. The PainPointsAgent evaluates the message — probes for specific problem + consequence + concrete detail. Right panel badge flips to `✓` once satisfied.
+4. The DataSourcesAgent becomes active and asks: *"What specific data sources does your inventory system need — a spreadsheet, a Shopify API, a supplier database, or something else?"*
+5. The interview continues. Each domain agent stays active until its specific bar is met. Badges flip from `○` to `✓` in real time.
+6. All 8 domains reach `COVERED`. The Orchestrator triggers the Compiler Agent. The right panel transitions to display the 5-prompt build plan.
 7. User copies Prompt 1 and pastes it into Claude Code.
 8. Claude Code begins building the inventory management system with no structural clarifying questions.
 
