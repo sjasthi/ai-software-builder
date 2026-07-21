@@ -52,39 +52,38 @@
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-- `requirement-orchestrator/src/RequirementParser.php` — `extract()` builds the system prompt with live domain state + domain definitions injected, calls Claude (`claude-opus-4-8`, 512 max tokens) via PHP's built-in curl (no Composer/SDK required), and routes the raw text through `parseAndValidate()`. Validation: strips markdown fencing, JSON-decodes, confirms all 8 domain keys present, and enforces COVERED-sticky invariant (an already-covered domain cannot regress). `allCovered()` is the programmatic gate — returns true when all 8 domains are COVERED, signaling `endpoint.php` to skip routing and call ManifestGenerator instead.
-- `requirement-orchestrator/tests/fp7_verification.php` — combined FP7 verification proof (Cox + Port). Cox section: live LLM call with the Shopify sentence confirms `data_sources`, `data_access`, and `interaction_model` → COVERED in one pass, 5 domains remain OPEN, gate does not fire. Port section: programmatic gate logic (no LLM). **Result: 19 passed, 0 failed.**
+- `requirement-orchestrator/src/RequirementParser.php` — `extract()` builds the system prompt with live domain state + domain definitions injected, calls Claude (`claude-opus-4-8`, 512 max tokens) via PHP's built-in curl (no Composer/SDK required), and routes the raw text through `parseAndValidate()`. Validation: strips markdown fencing, JSON-decodes, confirms all 8 domain keys present, and enforces COVERED-sticky invariant (an already-covered domain cannot regress).
 
 ### Notes
 - Uses PHP's built-in curl — no Composer or external SDK needed. Requires `ANTHROPIC_API_KEY` in the environment (or `config/local.php`).
 - Domain definitions added to system prompt so the LLM correctly maps "every morning" → `interaction_model` (scheduled automation).
 - No streaming needed — extraction output is always < 512 tokens; latency is negligible.
-- Run: `C:\xampp\php\php.exe tests\schema_migration_test.php` and `tests\session_recovery_test.php` from the `requirement-orchestrator/` folder (fp7_verification.php removed — superseded by Orchestrator architecture).
+- `RequirementParser.php` was later superseded by the Orchestrator-Workers architecture (FP8) and removed from the codebase.
 
 ---
 
 ## FP8 — Week 10 | Due: Jul 20
-**Deliverable:** Build `AgentEngine.php` — construct routing prompt, inject transcript + domain state, call LLM API; implement in-scope routing branch (LLM generates domain-targeting question for next OPEN domain). Extended this week to full Orchestrator-Workers architecture.
+**Deliverable:** Build `AgentEngine.php` — construct routing prompt, inject transcript + domain state, call LLM API; implement in-scope routing branch (LLM generates domain-targeting question for next OPEN domain).
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
-> _AgentEngine in-scope branch built by Port (Cox made up FP7 last week). Architecture extended to Orchestrator + 8 domain agents this week._
+> _In-scope branch covered by Port this week per team agreement (Cox made up FP7 last week). Cox's contribution this week was the architectural upgrade to Orchestrator-Workers._
 
 ### What Was Added
-- `src/agents/DomainAgent.php` — abstract base class. Shared `evaluate()` (30-turn transcript window, returns `{covered, detail}`) and `nextQuestion()` (focused probing question for the domain). All 8 agents extend this.
-- `src/agents/PainPointsAgent.php` through `InteractionModelAgent.php` — 8 specialized domain agents. Each has a domain-specific extraction prompt defining exactly what "covered" means for that domain, and a question generation prompt scoped to that domain only.
-- `src/Orchestrator.php` — dispatches each user message to the active domain agent (first OPEN domain), writes `COVERED` + `writeDomainAnswer(detail)` when satisfied, force-advances after 5 agent turns, calls `nextQuestion()` on the next active agent.
-- `src/LlmClient.php` — provider abstraction: `AnthropicClient` (Claude) and `OpenAIClient` (ChatGPT), both raw-curl, plus `ScriptedLlm` for demo mode. `LlmClientFactory::forTask()` resolves provider + model from config.
-- `public/post_message.php` — rewired to call `Orchestrator::dispatch()`. Old AgentEngine + RequirementParser pipeline replaced.
+- `src/agents/DomainAgent.php` — abstract base class with shared `evaluate()` (30-turn transcript window, returns `{covered, detail}`) and `nextQuestion()` logic. All 8 domain agents extend this.
+- `src/agents/PainPointsAgent.php` through `InteractionModelAgent.php` — 8 specialized domain agents, each with a domain-specific extraction prompt defining exactly what "covered" means for that domain and a focused question-generation prompt.
+- `src/Orchestrator.php` — dispatches each user message to the active domain agent, writes `COVERED` + `writeDomainAnswer(detail)` when satisfied, force-advances after 5 agent turns, calls `nextQuestion()` on the next active agent.
+- `src/LlmClient.php` — provider abstraction: `AnthropicClient` (Claude) and `OpenAIClient` (ChatGPT), both raw-curl, plus `ScriptedLlm` for demo mode. `LlmClientFactory::setRuntimeKey()` accepts per-request key injection without session storage.
+- `public/post_message.php` — rewired to call `Orchestrator::dispatch()`; reads `api_key` from POST and sets runtime key. Old AgentEngine + RequirementParser pipeline replaced.
 - `config/local.php.example` — multi-provider config template.
-- `src/InterviewSession.php` — added `writeDomainAnswer(id, domain, detail)` and `readDomainAnswers(id)`. Orchestrator saves extracted detail per domain; Compiler Agent reads it to populate the build plan.
+- `src/InterviewSession.php` — added `writeDomainAnswer(id, domain, detail)` and `readDomainAnswers(id)` so the Orchestrator can persist extracted detail per domain for the Compiler Agent.
+- `public/index.php` + `public/session.php` — API key entry refactored: key stored in browser `sessionStorage` only (tab-scoped, never server-side), passed as hidden POST field on each submission. `set_key.php` removed.
 
 ### Notes
-- **Why 8 agents instead of 1:** A single extractor evaluating all 8 domains generalizes its bar. Each dedicated agent is opinionated — PainPointsAgent won't accept "it's slow" without a consequence; DataSourcesAgent won't accept "we have data" without a named source. Narrower prompts → more accurate extraction.
-- **30-turn eval window:** early concrete answers were falling out of a 6-turn window as conversations grew. Expanding to 30 ensures the agent evaluates the full domain conversation.
-- **Turn cap:** after 5 agent questions on one domain, the Orchestrator force-marks COVERED to prevent loops.
+- **Why 8 agents instead of 1:** Each dedicated agent is opinionated about its domain — PainPointsAgent won't accept "it's slow" without a consequence; DataSourcesAgent won't accept "we have data" without a named source. Narrower prompts produce more accurate extraction than a single general extractor.
+- **30-turn eval window:** early concrete answers were falling out of the original 6-turn window as conversations grew deep. Expanding to 30 ensures the agent evaluates the full domain conversation.
+- **Turn cap:** after 5 agent questions on one domain, the Orchestrator force-marks COVERED to prevent infinite loops.
 - Requires an Anthropic or OpenAI key; falls back to static opening questions without one.
-- **Key handling refactored (post-FP8):** `set_key.php` removed. PHP session storage (`$_SESSION['api_key']`) replaced with browser `sessionStorage` + a per-request PHP static variable (`LlmClientFactory::setRuntimeKey()`). The key is now prompted on every new tab open, passed as a hidden POST field on each message submission, and never written to the server. `session_start()` removed from `post_message.php`.
 - Demo walkthrough: `demoFP8.md`.
 
 ---

@@ -77,23 +77,21 @@
 ---
 
 ## FP8 — Week 10 | Due: Jul 20
-**Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test. Architecture subsequently upgraded to Orchestrator-Workers.
+**Deliverable:** Implement out-of-scope routing branch (drift redirection, no domain advance); run boundary deviation test.
 
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
-> _Port covered both FP8 parts this week (Cox made up FP7 last week); the in-scope
-> question-generation half is logged in `Cox Weekly Progress.md`._
+> _Port covered both FP8 parts this week (Cox made up FP7 last week); the in-scope question-generation half is logged in `Cox Weekly Progress.md`._
 
 ### What Was Added
-- `src/AgentEngine.php` — Routing Agent with out-of-scope branch. `classifyScope()` labelled turns `IN_SCOPE`/`OUT_OF_SCOPE`; `redirect()` steered drifted users back without touching `domain_state`. This was the original FP8 implementation.
-- `tests/boundary_deviation_test.php` — boundary deviation proof. Proves drift leaves `domain_state` byte-for-byte unchanged and in-scope is allowed to advance. **Result: 16 passed, 0 failed.**
-- `src/Orchestrator.php` *(architecture upgrade)* — replaced the AgentEngine + RequirementParser pipeline. Off-topic handling is now absorbed by the **turn cap**: after 5 agent questions on one domain the Orchestrator force-marks COVERED and advances, rather than classifying and redirecting. The boundary deviation test still passes because domain state is never written on non-covered turns.
+- `src/AgentEngine.php` — Routing Agent with out-of-scope branch. `classifyScope()` labelled turns `IN_SCOPE`/`OUT_OF_SCOPE`; `redirect()` steered drifted users back without touching `domain_state`; `route()` is the pure decision function (anything that isn't explicit `OUT_OF_SCOPE` is treated as in-scope so a mis-classification never traps the user). Also covered Cox's in-scope deliverable: `nextQuestion()` generates a domain-targeting question for the next OPEN domain using the full transcript as context.
+- `tests/boundary_deviation_test.php` — boundary deviation proof. Proves drift leaves `domain_state` byte-for-byte unchanged, in-scope is allowed to advance, and both LLM branches fall back gracefully with no key. **Result: 16 passed, 0 failed.**
+- `src/MySQLPersister.php` — incremental MySQL persistence layer. `ensureSession()` creates or finds the MySQL session row (token = SHA-256 of JSON session id, satisfies schema's `CHAR(64)` constraint). `logExchange()` writes every user and agent message to `conversation_log`. `updateDomain()` updates the `domain_state` table after each domain is marked COVERED using `INSERT ... ON DUPLICATE KEY UPDATE`. `writeBuildPlan()` ready for the Compiler Agent (FP9). All methods silent-fail on any DB error so the app keeps running without a database.
 
 ### Notes
-- The explicit `classifyScope`/`redirect` branch from the original FP8 implementation was removed when the Orchestrator pattern replaced AgentEngine. The turn cap achieves the same safety property (off-topic messages cannot loop a domain indefinitely) without the extra LLM classification call per turn.
-- `boundary_deviation_test.php`, `gate_check_test.php`, and `fp7_verification.php` have been removed — they tested AgentEngine and RequirementParser which no longer exist.
+- `AgentEngine.php` and `boundary_deviation_test.php` were later removed when Cox's Orchestrator-Workers upgrade superseded the classifyScope/redirect pattern. The turn cap in the Orchestrator achieves the same safety property without an extra LLM call per turn.
+- `MySQLPersister` is wired into `post_message.php` (logs every exchange) and `Orchestrator.php` (updates domain state on each COVERED).
 - Remaining tests: `schema_migration_test.php` (12 passed) and `session_recovery_test.php` (11 passed).
-- Fails safe: any Orchestrator error drops to the FP6 placeholder (mechanical advance + static question), so the app stays demoable without a key.
 - Full walkthrough in `demoFP8.md`.
 
 ---
