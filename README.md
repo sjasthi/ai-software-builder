@@ -22,7 +22,7 @@ A PHP web application that conducts an adaptive interview with a user across 8 a
 
 1. Install [XAMPP](https://www.apachefriends.org/) and start Apache + MySQL
 2. Place the project in `C:\xampp\htdocs\` (or symlink it)
-3. Open: **`http://localhost/requirement-orchestrator/public/`**
+3. Open: <http://localhost/requirement-orchestrator/public/>
 
 ---
 
