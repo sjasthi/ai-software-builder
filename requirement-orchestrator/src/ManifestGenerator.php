@@ -85,7 +85,7 @@ class ManifestGenerator
         $raw = $client->complete(
             $this->systemPrompt($answers),
             [['role' => 'user', 'content' => 'Generate the 5-prompt build plan now. Return JSON only.']],
-            ['max_tokens' => 2000]
+            ['max_tokens' => 4000]
         );
         return is_string($raw) ? $this->parsePlan($raw) : null;
     }
