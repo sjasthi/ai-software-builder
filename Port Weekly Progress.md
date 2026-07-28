@@ -99,13 +99,15 @@
 ## FP9 — Week 11 | Due: Jul 27
 **Deliverable:** Run filler-pattern regex scan on output; validate 5 labeled prompt sections with non-empty domain-specific content
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `src/ManifestValidator.php` — pure-logic Stage 1 validator for the Compiler Agent output (mirrors Port's `gate()` style). `validate($plan)` returns `['valid'=>bool, 'violations'=>[…]]`, enforcing: all 5 `prompt_1…prompt_5` present and non-empty; **no conversational filler openings** (`FILLER_PATTERNS` regex — "Sure,", "Here is", "Of course", "Certainly", "Great", …); **no unfilled `[placeholder]`**; each prompt carries substantive, domain-specific content (≥ 40 chars). Reusable by the runtime gate / `validate_manifest.php` later.
+- `tests/manifest_validation_test.php` — FP9 verification proof. Runs the Compiler Agent on a fully-covered fixture through **two paths** — the mock-agent path (`LLM_MOCK`) and the deterministic template fallback (null client) — and asserts both outputs pass validation: 5 sections present, filler scan clean, no leftover placeholders, and the user's real answers surface in the right prompts (pain point → Prompt 1, Shopify data source → Prompt 2, reorder end-result → Prompt 3). Includes a **negative control** proving a filler/placeholder/empty plan is correctly rejected. **Result: 18 passed, 0 failed.** Runs offline, no MySQL required.
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- Run: `C:\xampp\php\php.exe tests\manifest_validation_test.php` from the `requirement-orchestrator/` folder.
+- The filler-pattern list matches the Big Picture Plan §5 Week-7/8 acceptance criteria.
 
 ---
 

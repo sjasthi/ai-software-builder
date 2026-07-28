@@ -11,6 +11,7 @@ require_once __DIR__ . '/agents/StakeholdersAgent.php';
 require_once __DIR__ . '/agents/AudienceTypeAgent.php';
 require_once __DIR__ . '/agents/CurrentProcessAgent.php';
 require_once __DIR__ . '/agents/InteractionModelAgent.php';
+require_once __DIR__ . '/ManifestGenerator.php';
 
 class Orchestrator
 {
@@ -43,6 +44,7 @@ class Orchestrator
         $activeKey = $this->nextOpenDomain($domainState);
 
         if ($activeKey === null) {
+            $this->ensureBuildPlan($sessionId);
             return [
                 'done'          => true,
                 'response'      => 'That covers all 8 areas — your build plan is ready on the right.',
@@ -80,6 +82,7 @@ class Orchestrator
         // Check if all domains are now covered after this update
         $nextKey = $this->nextOpenDomain($domainState);
         if ($nextKey === null) {
+            $this->ensureBuildPlan($sessionId);
             return [
                 'done'          => true,
                 'response'      => 'That covers all 8 areas — your build plan is ready on the right.',
@@ -99,6 +102,24 @@ class Orchestrator
             'domain_state'  => $domainState,
             'active_domain' => $nextKey,
         ];
+    }
+
+    /**
+     * Trigger the Compiler Agent once, when all 8 domains are COVERED. Idempotent:
+     * if a plan is already stored on the session it does nothing (never regenerates
+     * or re-bills on a replay). Persists to both stores — the JSON session (for the
+     * right-panel view) and MySQL generated_plans.
+     */
+    private function ensureBuildPlan(string $sessionId): void
+    {
+        $session = InterviewSession::readSession($sessionId);
+        if ($session === null || !empty($session['build_plan'])) {
+            return;
+        }
+
+        $plan = (new ManifestGenerator())->generate($sessionId);
+        InterviewSession::writeBuildPlan($sessionId, $plan);
+        MySQLPersister::writeBuildPlan($sessionId, $plan);
     }
 
     public function nextOpenDomain(array $domainState): ?string

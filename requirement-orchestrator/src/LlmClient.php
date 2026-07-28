@@ -161,8 +161,43 @@ class ScriptedLlm implements LlmClient
             'scope_classification' => $this->mockClassify($userMsg),
             'question_generation'  => $this->mockQuestion($system),
             'redirection'          => $this->mockRedirect($system),
+            'plan_generation'      => $this->mockPlan($system),
             default                => null,
         };
+    }
+
+    /**
+     * Simulate the Compiler Agent. Reads the domain answers the app injected into
+     * the prompt (lines like "- Pain Points: <detail>") and returns a believable,
+     * populated 5-prompt build plan as JSON — so mock mode demos the full FP9 flow
+     * end-to-end with no key. Mirrors the §3c sequence.
+     */
+    private function mockPlan(string $system): string
+    {
+        $a = [];
+        if (preg_match_all('/^- ([^:]+):\s*(.+)$/mu', $system, $m, PREG_SET_ORDER)) {
+            foreach ($m as $row) { $a[trim($row[1])] = trim($row[2]); }
+        }
+        $get = fn(string $label) => $a[$label] ?? 'the stated requirement';
+
+        return json_encode([
+            'prompt_1' => "You are a senior software architect. Build an application that solves: "
+                . $get('Pain Points') . ". The primary users are " . $get('Stakeholders & Consumers')
+                . " with a " . $get('Audience Type') . " technical background. It replaces "
+                . $get('Current Process') . ". Scaffold the project structure and stack.",
+            'prompt_2' => "Generate the complete database schema for this system. Data enters via "
+                . $get('Data Access') . " from " . $get('Data Sources')
+                . ". Include all tables, column types, foreign keys, and indexes.",
+            'prompt_3' => "Build the core application logic. The system must produce "
+                . $get('End Result') . " via a " . $get('Interaction Model')
+                . " interface. Include server-side logic, validation, and error handling.",
+            'prompt_4' => "Build the front-end interface appropriate for " . $get('Audience Type')
+                . " users. The UI must present " . $get('End Result') . " clearly and support "
+                . $get('Interaction Model') . ".",
+            'prompt_5' => "Connect all layers. Verify data flows from " . $get('Data Access')
+                . " through the backend to produce " . $get('End Result')
+                . ". Write tests for all critical paths.",
+        ]);
     }
 
     /**
@@ -258,6 +293,9 @@ class LlmClientFactory
         'scope_classification' => 'claude-haiku-4-5-20251001',
         'question_generation'  => 'claude-haiku-4-5-20251001',
         'redirection'          => 'claude-haiku-4-5-20251001',
+        // Compiler Agent (FP9): the one-shot final build plan — quality over cost,
+        // so use the strongest model. Runs at most once per completed session.
+        'plan_generation'      => 'claude-opus-4-8',
     ];
 
     private const FALLBACK_MODEL = 'claude-haiku-4-5-20251001';
@@ -269,6 +307,8 @@ class LlmClientFactory
         'scope_classification' => 'gpt-4o-mini',
         'question_generation'  => 'gpt-4o-mini',
         'redirection'          => 'gpt-4o-mini',
+        // Compiler Agent (FP9): stronger model for the final build plan.
+        'plan_generation'      => 'gpt-4o',
     ];
 
     private const OPENAI_FALLBACK_MODEL = 'gpt-4o-mini';

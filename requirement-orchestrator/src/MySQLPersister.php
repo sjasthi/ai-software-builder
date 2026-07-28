@@ -87,6 +87,48 @@ class MySQLPersister
     }
 
     /**
+     * Read the finalized domain answers back out of domain_state.domain_json.
+     * This is the source the Compiler Agent (ManifestGenerator) builds the plan
+     * from: the same detail the Orchestrator wrote via updateDomain() after each
+     * domain was marked COVERED. Returns [domain => detail], or [] if the DB is
+     * unavailable or nothing has been persisted yet (silent-fail like the rest).
+     */
+    public static function readDomainAnswers(string $jsonId): array
+    {
+        try {
+            $mysqlId = self::ensureSession($jsonId);
+            if ($mysqlId === null) return [];
+
+            $db   = getDB();
+            $stmt = $db->prepare('SELECT domain_json FROM domain_state WHERE session_id = ?');
+            $stmt->execute([$mysqlId]);
+            $row = $stmt->fetch();
+            if (!$row || ($row['domain_json'] ?? '') === '') return [];
+
+            $decoded = json_decode($row['domain_json'], true);
+            return is_array($decoded) ? $decoded : [];
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Delete a session and all its child rows (conversation_log, domain_state,
+     * generated_plans, llm_requests) via ON DELETE CASCADE. Silent-fail — the app
+     * runs without a DB, and the JSON file is the runtime source of truth.
+     */
+    public static function deleteSession(string $jsonId): void
+    {
+        try {
+            $db = getDB();
+            $db->prepare('DELETE FROM sessions WHERE session_token = ?')
+               ->execute([self::token($jsonId)]);
+        } catch (Throwable) {
+            // Never surface DB errors to the user
+        }
+    }
+
+    /**
      * Write the generated build plan to generated_plans.
      * $prompts must have keys prompt_1 … prompt_5.
      */

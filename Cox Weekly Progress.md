@@ -91,13 +91,19 @@
 ## FP9 — Week 11 | Due: Jul 27
 **Deliverable:** Build `ManifestGenerator.php` — read finalized 8-domain data from DB, populate 5-prompt build plan template; implement placeholder substitution (replace all template vars with user's verified answers, wire output into right panel transition)
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `src/ManifestGenerator.php` — the **Compiler Agent** (a separate agent from the 8 domain agents). `generate($sessionId)` pulls the finalized answers back out of the DB (`MySQLPersister::readDomainAnswers()` → `domain_state.domain_json`, the same detail the Orchestrator wrote on each COVERED), then **LLM-composes** a sequenced 5-prompt build plan via the new `plan_generation` task. If there's no key / the call fails / the JSON is malformed, it falls back to deterministic §3c template substitution — so `generate()` always returns a valid, non-empty 5-key plan. Reads from the DB first, falls back to the JSON session so the app still produces a plan with no MySQL.
+- `src/MySQLPersister.php` — added `readDomainAnswers($jsonId)`: reads and decodes `domain_state.domain_json` for the session; silent-fail → `[]`.
+- `src/InterviewSession.php` — added `writeBuildPlan($id, $plan)`: stores the assoc `prompt_1…prompt_5` plan as an ordered indexed array under the session's `build_plan`.
+- `src/LlmClient.php` — registered the `plan_generation` task (Anthropic → `claude-opus-4-8`, OpenAI → `gpt-4o`; the one-shot final plan gets the strongest model since it runs at most once per session). Added a `ScriptedLlm` `mockPlan()` branch so mock mode demos a populated plan end-to-end.
+- `src/Orchestrator.php` — added idempotent `ensureBuildPlan()`, triggered at both completion points in `dispatch()` when all 8 are COVERED. Persists the plan to both the JSON session and MySQL `generated_plans`; never regenerates once stored.
+- `public/partials/build_plan.php` — renders the populated 5-prompt plan from `$session['build_plan']` and adds a working per-prompt **Copy** button (`navigator.clipboard`, with a legacy fallback).
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- **Decision (with teammate/user):** the Compiler is a real LLM agent, not just string substitution — but keeps a deterministic template fallback so it never fails to produce a plan. Data source is the **DB** (per FP9 spec "read finalized 8-domain data from DB"), with a JSON fallback to preserve the app's "runs without MySQL" property.
+- Verified by Port's `tests/manifest_validation_test.php` (18 passed) and no regression in `session_recovery_test.php` (11 passed).
 
 ---
 

@@ -190,6 +190,39 @@ class InterviewSession
         return $data['domain_answers'] ?? [];
     }
 
+    /**
+     * Persist the Compiler Agent's generated 5-prompt build plan (FP9).
+     * Accepts the assoc form (prompt_1 … prompt_5) the ManifestGenerator returns
+     * and stores it as an ordered indexed array [p1 … p5] so build_plan.php can
+     * render it directly with $builtPlan[$i].
+     */
+    public static function writeBuildPlan(string $id, array $plan): bool
+    {
+        $data = self::readSession($id);
+        if ($data === null) { return false; }
+        $ordered = [];
+        for ($i = 1; $i <= 5; $i++) {
+            $ordered[] = (string) ($plan['prompt_' . $i] ?? '');
+        }
+        $data['build_plan'] = $ordered;
+        self::atomicSave($id, $data);
+        return true;
+    }
+
+    /**
+     * Permanently delete a session's .json file (and any stray temp write).
+     * Path-traversal guarded via safeId(). Returns true if the id was valid and
+     * the file is now gone (or was already absent).
+     */
+    public static function deleteSession(string $id): bool
+    {
+        if (!self::safeId($id)) { return false; }
+        $path = self::path($id);
+        if (is_file($path))        { @unlink($path); }
+        if (is_file($path . '.tmp')) { @unlink($path . '.tmp'); }
+        return !is_file($path);
+    }
+
     // ──────────────────── backs the previous-sessions UI ────────────────────
 
     /**
