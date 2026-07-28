@@ -94,16 +94,32 @@
 **Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-- `src/ManifestGenerator.php` — the **Compiler Agent** (a separate agent from the 8 domain agents). `generate($sessionId)` pulls the finalized answers back out of the DB (`MySQLPersister::readDomainAnswers()` → `domain_state.domain_json`, the same detail the Orchestrator wrote on each COVERED), then **LLM-composes** a sequenced 5-prompt build plan via the new `plan_generation` task. If there's no key / the call fails / the JSON is malformed, it falls back to deterministic §3c template substitution — so `generate()` always returns a valid, non-empty 5-key plan. Reads from the DB first, falls back to the JSON session so the app still produces a plan with no MySQL.
-- `src/MySQLPersister.php` — added `readDomainAnswers($jsonId)`: reads and decodes `domain_state.domain_json` for the session; silent-fail → `[]`.
+
+**Compiler Agent (the core deliverable):**
+- `src/ManifestGenerator.php` — the **Compiler Agent**, a separate agent from the 8 domain agents. `generate($sessionId)` pulls the finalized answers out of the **DB** (`MySQLPersister::readDomainAnswers()` → `domain_state.domain_json`, the same detail the Orchestrator wrote on each COVERED), then **LLM-composes** a sequenced 5-prompt build plan via the new `plan_generation` task. If there's no key / the call fails / the JSON is malformed, it falls back to deterministic §3c template substitution — so `generate()` always returns a valid, non-empty 5-key plan. Reads from the DB first, falls back to the JSON session so the app still produces a plan with no MySQL. **Prompt 1 (Project Initialization) is guaranteed to open with a persona** — "You are a senior software architect." — via `ensurePersona()` on both the LLM and template paths.
+- `src/MySQLPersister.php` — added `readDomainAnswers($jsonId)`: reads and decodes `domain_state.domain_json`; silent-fail → `[]`. (Reuses the existing `writeBuildPlan()`.)
 - `src/InterviewSession.php` — added `writeBuildPlan($id, $plan)`: stores the assoc `prompt_1…prompt_5` plan as an ordered indexed array under the session's `build_plan`.
-- `src/LlmClient.php` — registered the `plan_generation` task (Anthropic → `claude-opus-4-8`, OpenAI → `gpt-4o`; the one-shot final plan gets the strongest model since it runs at most once per session). Added a `ScriptedLlm` `mockPlan()` branch so mock mode demos a populated plan end-to-end.
-- `src/Orchestrator.php` — added idempotent `ensureBuildPlan()`, triggered at both completion points in `dispatch()` when all 8 are COVERED. Persists the plan to both the JSON session and MySQL `generated_plans`; never regenerates once stored.
-- `public/partials/build_plan.php` — renders the populated 5-prompt plan from `$session['build_plan']` and adds a working per-prompt **Copy** button (`navigator.clipboard`, with a legacy fallback).
+- `src/LlmClient.php` — registered the `plan_generation` task (Anthropic → `claude-opus-4-8`, OpenAI → `gpt-4o`; the one-shot final plan gets the strongest model since it runs at most once per session). Added a `ScriptedLlm::mockPlan()` branch so mock mode demos a populated plan end-to-end.
+- `src/Orchestrator.php` — added idempotent `ensureBuildPlan()`, triggered when all 8 are COVERED. Persists the plan to both the JSON session and MySQL `generated_plans`; never regenerates once stored.
+
+**Right-panel build-plan UI (`public/partials/build_plan.php`):**
+- Renders the populated plan as numbered green-step cards (Project Initialization → Integration & Testing) under a green header banner, each prompt in a monospace block.
+- **Copy** button per prompt (`navigator.clipboard`, legacy fallback, "Copied ✓" flash).
+- **Download** the whole plan as **.md / .txt / .json**. The `.json` export carries the source requirements + per-domain coverage alongside the 5 prompts.
+
+**Coverage transparency:**
+- `src/InterviewSession.php` — `writeDomainAnswer(..., $covered)` + `readDomainCoverage()` persist the **genuine** extraction verdict per domain. `Orchestrator` captures it *before* the turn cap can force it, so the `.json` export flags any domain that was force-advanced without genuine coverage (`all_requirements_covered` + per-domain `covered`).
+
+**Extraction robustness fix (`src/agents/DomainAgent.php`):**
+- `evaluate()` now parses the verdict via `parseVerdict()` — strips ` ```json ` fences, isolates the `{…}`, coerces the boolean. Fixes a bug where fenced model output made every domain read as NOT covered, so the agent looped to the 5-turn cap and force-completed domains while storing the raw JSON blob as the "detail." Bumped `max_tokens` (extraction 120→1000, questions 150→400; Compiler 2000→4000) since each user brings their own key/model.
+
+**Session management:**
+- `src/InterviewSession.php` `deleteSession()` (path-traversal guarded) + `public/delete_session.php` endpoint + delete UI in `public/partials/session_list.php` (hover "Delete this session" tooltip + browser confirm). Works from both the landing screen and the hamburger drawer.
 
 ### Notes
-- **Decision (with teammate/user):** the Compiler is a real LLM agent, not just string substitution — but keeps a deterministic template fallback so it never fails to produce a plan. Data source is the **DB** (per FP9 spec "read finalized 8-domain data from DB"), with a JSON fallback to preserve the app's "runs without MySQL" property.
-- Verified by Port's `tests/manifest_validation_test.php` (18 passed) and no regression in `session_recovery_test.php` (11 passed).
+- **Decisions:** real LLM agent + deterministic fallback; **DB** as the answer source (per FP9 spec) with JSON fallback for "runs without MySQL"; Prompt 1 always leads with a persona; genuine coverage persisted so the JSON export surfaces force-advanced domains.
+- The delete UI extends Port's `public/partials/session_list.php` partial — coordinated shared change.
+- Verified: `tests/manifest_validation_test.php` (18 passed) and `session_recovery_test.php` (11 passed) — no regressions.
 
 ---
 

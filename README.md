@@ -50,6 +50,8 @@ src/
 
 Each domain agent owns one of the 8 requirement domains. It has its own focused extraction prompt (with a domain-specific definition of "covered") and its own question generation prompt. The Orchestrator routes each user message to the active domain agent, saves the extracted detail when a domain is marked COVERED, and advances to the next agent.
 
+When all 8 domains are COVERED, the **Compiler Agent** (`ManifestGenerator.php`) reads the finalized answers and composes a sequenced **5-prompt build plan** (LLM-composed, with a deterministic template fallback). The right panel transitions from the domain matrix to the plan: numbered prompt cards with per-prompt **Copy** buttons and **.md / .txt / .json** downloads (the `.json` export includes the source requirements + per-domain coverage).
+
 ---
 
 ## API Key
@@ -74,6 +76,7 @@ Set this before starting the server. The app runs with a scripted mock LLM — s
 
 ```powershell
 cd requirement-orchestrator
-C:\xampp\php\php.exe tests\schema_migration_test.php     # 12 passed
-C:\xampp\php\php.exe tests\session_recovery_test.php     # 11 passed
+C:\xampp\php\php.exe tests\schema_migration_test.php      # 12 passed
+C:\xampp\php\php.exe tests\session_recovery_test.php      # 11 passed
+C:\xampp\php\php.exe tests\manifest_validation_test.php   # 18 passed (Compiler Agent output)
 ```
