@@ -5,8 +5,9 @@
  *
  * The 5 prompt SECTIONS are the agreed structure (Big Picture Plan §3c). The prompt
  * CONTENT is produced by the Compiler Agent (ManifestGenerator, FP9), stored on the
- * session as an ordered array of 5 strings. Each prompt renders in a monospace block
- * with a copy button; the whole plan can be downloaded as .md or .txt.
+ * session as an ordered array of 5 strings, rendered here as per-prompt cards. The
+ * whole plan can be downloaded as .md, .txt, or .json (the .json export carries the
+ * source requirements + per-domain coverage alongside the prompts).
  *
  * Expects $session in scope (included from session.php).
  */
@@ -18,6 +19,34 @@ $planSections = [
     ['Integration & Testing',  'Paste this last:'],
 ];
 $builtPlan = $session['build_plan'] ?? null;   // ordered [p1..p5], populated at FP9
+
+// Assoc form of the prompts (prompt_1 … prompt_5) for copy / download.
+$planAssoc = [];
+if ($builtPlan) {
+    foreach ($builtPlan as $i => $text) { $planAssoc['prompt_' . ($i + 1)] = $text; }
+}
+
+// The .json export = source requirements (per-domain covered + detail) AND the
+// prompts, so any domain left NOT genuinely covered (force-advanced by the turn
+// cap) is visible in the download.
+$domainAnswers  = $session['domain_answers']  ?? [];
+$domainCoverage = $session['domain_coverage'] ?? [];
+$requirements   = [];
+foreach (InterviewSession::DOMAINS as $d) {
+    $requirements[$d] = [
+        // Default to true only when no genuine verdict was recorded (legacy sessions).
+        'covered' => array_key_exists($d, $domainCoverage) ? (bool) $domainCoverage[$d] : true,
+        'detail'  => $domainAnswers[$d] ?? '',
+    ];
+}
+$allCovered = !in_array(false, array_column($requirements, 'covered'), true);
+
+$planJson = $builtPlan
+    ? json_encode(
+        ['all_requirements_covered' => $allCovered, 'requirements' => $requirements, 'prompts' => $planAssoc],
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    )
+    : '';
 ?>
 <style>
     /* ── Build-plan panel (FP9) ─────────────────────────────────── */
@@ -71,12 +100,16 @@ $builtPlan = $session['build_plan'] ?? null;   // ordered [p1..p5], populated at
     <?php endforeach; ?>
 
     <?php if ($builtPlan): ?>
-        <div class="row g-2 mt-1">
-            <div class="col-6">
-                <button type="button" class="btn btn-outline-secondary w-100 download-btn" data-format="md">Download .md</button>
+        <!-- Downloads: .md / .txt / .json -->
+        <div class="row g-2 mt-3">
+            <div class="col-4">
+                <button type="button" class="btn btn-outline-secondary w-100 download-btn" data-format="md">.md</button>
             </div>
-            <div class="col-6">
-                <button type="button" class="btn btn-outline-secondary w-100 download-btn" data-format="txt">Download .txt</button>
+            <div class="col-4">
+                <button type="button" class="btn btn-outline-secondary w-100 download-btn" data-format="txt">.txt</button>
+            </div>
+            <div class="col-4">
+                <button type="button" class="btn btn-outline-secondary w-100 download-btn" data-format="json">.json</button>
             </div>
         </div>
     <?php endif; ?>
@@ -84,36 +117,38 @@ $builtPlan = $session['build_plan'] ?? null;   // ordered [p1..p5], populated at
 
 <?php if ($builtPlan): ?>
 <script>
-    // Compiler Agent output (FP9): copy a single prompt, or download the whole plan.
+    // Compiler Agent output (FP9): per-prompt copy + whole-plan downloads.
     (function () {
         var prompts  = <?= json_encode(array_values($builtPlan), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         var sections = <?= json_encode(array_map(fn($s) => $s[0], $planSections), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        var planJson = <?= json_encode($planJson, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 
-        function copyText(text, onDone) {
+        function copyText(text, btn) {
+            var flash = function () {
+                var original = btn.innerHTML;
+                btn.classList.add('copied');
+                btn.innerHTML = 'Copied &#10003;';
+                setTimeout(function () { btn.classList.remove('copied'); btn.innerHTML = original; }, 1500);
+            };
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(onDone).catch(onDone);
+                navigator.clipboard.writeText(text).then(flash).catch(flash);
             } else {
                 var ta = document.createElement('textarea');
                 ta.value = text; document.body.appendChild(ta); ta.select();
                 try { document.execCommand('copy'); } catch (e) {}
-                document.body.removeChild(ta); onDone();
+                document.body.removeChild(ta); flash();
             }
         }
 
         document.querySelectorAll('.copy-prompt-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                var idx = parseInt(btn.getAttribute('data-prompt-index'), 10);
-                copyText(prompts[idx] || '', function () {
-                    var original = btn.innerHTML;
-                    btn.classList.add('copied');
-                    btn.innerHTML = 'Copied &#10003;';
-                    setTimeout(function () { btn.classList.remove('copied'); btn.innerHTML = original; }, 1500);
-                });
+                copyText(prompts[parseInt(btn.getAttribute('data-prompt-index'), 10)] || '', btn);
             });
         });
 
         // Assemble the full plan in the requested format and trigger a download.
         function buildPlanText(format) {
+            if (format === 'json') { return planJson; }
             var out = [];
             if (format === 'md') {
                 out.push('# Your Software Build Plan', '', '_Generated by Requirement Orchestrator_', '');
@@ -130,11 +165,11 @@ $builtPlan = $session['build_plan'] ?? null;   // ordered [p1..p5], populated at
             return out.join('\n');
         }
 
+        var mime = { md: 'text/markdown', txt: 'text/plain', json: 'application/json' };
         document.querySelectorAll('.download-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 var format = btn.getAttribute('data-format');
-                var blob = new Blob([buildPlanText(format)],
-                    { type: format === 'md' ? 'text/markdown' : 'text/plain' });
+                var blob = new Blob([buildPlanText(format)], { type: mime[format] || 'text/plain' });
                 var url = URL.createObjectURL(blob);
                 var a = document.createElement('a');
                 a.href = url; a.download = 'build-plan.' + format;

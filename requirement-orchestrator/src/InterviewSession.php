@@ -172,13 +172,23 @@ class InterviewSession
         return $data['domain_state'] ?? self::blankDomainState();
     }
 
-    /** Persist the extracted answer detail for a single domain. */
-    public static function writeDomainAnswer(string $id, string $domain, string $detail): bool
+    /**
+     * Persist the extracted answer detail for a single domain, and optionally the
+     * GENUINE coverage verdict from the extraction agent (true = the agent judged
+     * the domain actually covered; false = it was force-advanced by the turn cap
+     * without genuine coverage). Recording the real verdict lets the build-plan
+     * JSON view surface any domain that was completed but not truly covered.
+     */
+    public static function writeDomainAnswer(string $id, string $domain, string $detail, ?bool $covered = null): bool
     {
         $data = self::readSession($id);
         if ($data === null) { return false; }
         if (!isset($data['domain_answers'])) { $data['domain_answers'] = []; }
         $data['domain_answers'][$domain] = $detail;
+        if ($covered !== null) {
+            if (!isset($data['domain_coverage'])) { $data['domain_coverage'] = []; }
+            $data['domain_coverage'][$domain] = $covered;
+        }
         self::atomicSave($id, $data);
         return true;
     }
@@ -188,6 +198,13 @@ class InterviewSession
     {
         $data = self::readSession($id);
         return $data['domain_answers'] ?? [];
+    }
+
+    /** Return the genuine per-domain coverage verdicts (domain => bool), keyed by domain. */
+    public static function readDomainCoverage(string $id): array
+    {
+        $data = self::readSession($id);
+        return $data['domain_coverage'] ?? [];
     }
 
     /**

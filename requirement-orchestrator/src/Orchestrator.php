@@ -57,6 +57,10 @@ class Orchestrator
         $agent  = $this->agents[$activeKey];
         $result = $agent->evaluate($userMessage, $transcript);
 
+        // Capture the GENUINE verdict before the turn cap can force it — so the
+        // build-plan JSON can later show which domains were force-advanced.
+        $genuinelyCovered = !empty($result['covered']);
+
         // Force-advance after 5 agent turns on the same domain to prevent infinite loops.
         if (!$result['covered']) {
             $agentTurnsOnDomain = count(array_filter(
@@ -73,7 +77,7 @@ class Orchestrator
             $domainState[$activeKey] = 'COVERED';
             InterviewSession::writeDomainState($sessionId, $domainState);
             if (($result['detail'] ?? '') !== '') {
-                InterviewSession::writeDomainAnswer($sessionId, $activeKey, $result['detail']);
+                InterviewSession::writeDomainAnswer($sessionId, $activeKey, $result['detail'], $genuinelyCovered);
             }
             $allAnswers = InterviewSession::readDomainAnswers($sessionId);
             MySQLPersister::updateDomain($sessionId, $activeKey, $result['detail'] ?? '', $allAnswers);

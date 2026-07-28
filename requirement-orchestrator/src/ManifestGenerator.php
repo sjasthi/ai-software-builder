@@ -42,11 +42,29 @@ class ManifestGenerator
      * Compile the finalized answers for a session into the 5-prompt build plan.
      * @return array{prompt_1:string,prompt_2:string,prompt_3:string,prompt_4:string,prompt_5:string}
      */
+    /** Persona Prompt 1 always opens with, so the coding agent has a clear role. */
+    private const PERSONA = 'You are a senior software architect.';
+
     public function generate(string $sessionId): array
     {
         $answers = $this->loadAnswers($sessionId);
         $plan    = $this->composeWithLlm($answers) ?? $this->renderTemplate($answers);
-        return $this->fillGaps($plan, $answers);
+        $plan    = $this->fillGaps($plan, $answers);
+        $plan['prompt_1'] = $this->ensurePersona($plan['prompt_1']);
+        return $plan;
+    }
+
+    /**
+     * Guarantee Prompt 1 (Project Initialization) begins by assigning the coding
+     * agent a persona. The LLM is asked to do this, but we enforce it so the
+     * template path and any stray model output are consistent.
+     */
+    private function ensurePersona(string $prompt): string
+    {
+        if (preg_match('/^\s*you are\b/i', $prompt)) {
+            return $prompt;
+        }
+        return self::PERSONA . ' ' . ltrim($prompt);
     }
 
     /**
@@ -118,6 +136,8 @@ class ManifestGenerator
             . "  prompt_4 = UI Construction\n"
             . "  prompt_5 = Integration & Testing\n"
             . "Rules:\n"
+            . "- prompt_1 MUST open by assigning the coding agent a persona — begin it with "
+            . "\"You are a senior software architect.\" and then the initialization instructions.\n"
             . "- Each prompt is a complete, self-contained instruction built from the user's ACTUAL "
             . "answers above. Reference their specifics.\n"
             . "- Never emit bracketed placeholders like [pain_points]; substitute the real content.\n"
