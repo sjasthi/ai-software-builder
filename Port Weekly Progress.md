@@ -112,15 +112,18 @@
 ---
 
 ## FP10 — Week 12 | Due: Aug 3
-**Deliverable:** Run race-condition stress test — confirm single network request per submit in DevTools; verify single server execution per submit
+**Deliverable:** Build `public/js/app.js` (UI lockdown + single AJAX POST); run race-condition stress test — confirm single network request per submit in DevTools; verify single server execution per submit
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `public/js/app.js` — the **async pipeline client**. Hijacks the interview form's submit (`preventDefault`) and sends one background `fetch('endpoint.php')` per answer. **UI lockdown:** the instant a submit starts it disables the input + Send, shows the Send spinner, and sets an `inFlight` flag that rejects any further submit until the reply lands — the client half of the race guard (a fast double-Send / Enter-mash can't launch parallel chain executions). Applies the JSON reply in place: appends the agent bubble (via `textContent`, XSS-safe, mirroring `htmlspecialchars`), flips the domain badges by calling the matrix partial's existing global `setDomainState()`, and on `done` injects the server-rendered `plan_html` into `#right-panel`. Injected `<script>` tags are re-executed (`runScripts()`) so FP9's copy/download logic rebinds without duplicating any of it here; the input stays locked once complete.
+- `tests/endpoint_lock_test.php` — **race-condition stress test.** Exercises the exact `flock(LOCK_EX | LOCK_NB)` primitive `endpoint.php` relies on and asserts the guarantee directly: while request A holds the session lock, request B for the same session is **rejected** (→ endpoint returns `409 busy`), and B succeeds only once A releases. Proves **single server execution per submit**. **Result: 5 passed, 0 failed.** Runs offline, no MySQL required.
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- **Run:** `C:\xampp\php\php.exe tests\endpoint_lock_test.php`.
+- **Manual DevTools check (single network request):** documented step-by-step in `demoFP10.md` — filter Network to `endpoint.php`, double-click Send, confirm exactly one request row and one badge advance per answer.
+- **Decisions (with Cox):** two-layer guard — client `inFlight` lock (one request) **and** server `flock` (one execution); full replacement of the sync flow (no no-JS fallback).
 
 ---
 

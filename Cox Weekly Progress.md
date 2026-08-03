@@ -126,13 +126,19 @@
 ## FP10 — Week 12 | Due: Aug 3
 **Deliverable:** Build `public/endpoint.php` — sequential chain controller (Extraction → gate → Routing or Compiler)
 
-**Status:** `[ ] Not Started` / `[ ] In Progress` / `[ ] Complete`
+**Status:** `[ ] Not Started` / `[ ] In Progress` / `[x] Complete`
 
 ### What Was Added
-<!-- List files created/modified and what each does -->
+- `public/endpoint.php` — the **async chain controller**. Runs the same pipeline as the old `post_message.php` (title-from-first-answer → write user turn → `Orchestrator::dispatch()` → write agent turn) but **returns JSON** instead of a redirect, so `app.js` applies the result in place with no full-page reload. `dispatch()` already returns `{done, response, domain_state, active_domain}` — Extraction (domain-agent evaluate) → gate (all 8 COVERED?) → Routing (next question) or Compiler (`ensureBuildPlan`) — so the endpoint is a thin JSON wrapper over the existing engine. On `done`, it reloads the session (the Compiler already ran + `writeDomainState` flipped `status` to `complete`) and `ob_start()`-captures `partials/build_plan.php` into a `plan_html` field the client injects.
+- **Server-side concurrency guard (the milestone's point):** a per-session non-blocking exclusive lock — `flock($fp, LOCK_EX | LOCK_NB)` on `sessions/<id>.lock`. A second request for the same session while the first is mid-flight fails the lock and gets `409 {busy:true}` instead of executing the chain twice, so two requests can never write `domain_state` for one session simultaneously. `$id` is path-traversal-validated by `readSession()` before it touches the lock path.
+- Kept the FP6 no-key **placeholder fallback** (`advancePlaceholder`) but refactored it to return the JSON payload pieces, so the app still demos end-to-end without an API key.
+- `public/session.php` — form `action` now targets `endpoint.php`; Send button carries a Bootstrap spinner (`.is-loading` toggled by `app.js`); loads `public/js/app.js` after jQuery. **Full replacement** of the synchronous flow — no no-JS fallback (team decision with Port).
 
 ### Notes
-<!-- Blockers, decisions, deviations -->
+- **Decisions (made with Port, in-session):** (1) endpoint returns server-rendered build-plan HTML for in-place injection rather than a reload — reuses FP9's copy/download logic untouched; (2) full replacement of `post_message.php` rather than progressive enhancement; (3) client lock **and** server `flock` guard, so both halves of the stress test ("single request" + "single execution") are enforced.
+- `post_message.php` is now superseded by `endpoint.php` (left in place for reference; nothing links to it).
+- Verified: `php -l` clean on all touched files; `tests/endpoint_lock_test.php` (5 passed) proves the guard; no regressions in `session_recovery_test.php` / `manifest_validation_test.php`.
+- Demo walkthrough + DevTools stress procedure: `demoFP10.md`.
 
 ---
 

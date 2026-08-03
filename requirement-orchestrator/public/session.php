@@ -49,6 +49,11 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
 
         #right-panel { display: flex; flex-direction: column; height: 100%; background: #f8f9fa; border-left: 1px solid #dee2e6; overflow-y: auto; }
         @media (max-width: 767.98px) { #right-panel { border-left: none; border-top: 1px solid #dee2e6; } }
+
+        /* Send-button busy state (FP10): spinner hidden until app.js locks the UI. */
+        #input-area button[type="submit"] .spinner-border { display: none; }
+        #input-area button[type="submit"].is-loading .spinner-border { display: inline-block; }
+        #input-area button[type="submit"].is-loading .send-label { display: none; }
     </style>
 </head>
 <body>
@@ -93,13 +98,16 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
                 <?php endforeach; ?>
             </div>
 
-            <form id="input-area" method="post" action="post_message.php" autocomplete="off">
+            <form id="input-area" method="post" action="endpoint.php" autocomplete="off">
                 <input type="hidden" name="id" value="<?= htmlspecialchars($id) ?>">
                 <input type="hidden" name="api_key" id="api_key_field" value="">
                 <div class="input-group">
                     <input type="text" name="message" class="form-control" placeholder="Type your answer…"
                            aria-label="Your answer" <?= $complete ? 'disabled' : 'autofocus' ?>>
-                    <button class="btn btn-primary px-4" type="submit" <?= $complete ? 'disabled' : '' ?>>Send&nbsp;→</button>
+                    <button class="btn btn-primary px-4" type="submit" <?= $complete ? 'disabled' : '' ?>>
+                        <span class="spinner-border spinner-border-sm align-middle" role="status" aria-hidden="true"></span>
+                        <span class="send-label">Send&nbsp;→</span>
+                    </button>
                 </div>
                 <?php if ($complete): ?>
                     <small class="text-success">All 8 areas covered — your build plan is on the right.</small>
@@ -185,5 +193,7 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
         }
     })();
 </script>
+<!-- FP10 async pipeline: submit lockdown + single AJAX POST to endpoint.php (Port). -->
+<script src="js/app.js"></script>
 </body>
 </html>
