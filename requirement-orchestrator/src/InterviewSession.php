@@ -207,6 +207,108 @@ class InterviewSession
         return $data['domain_coverage'] ?? [];
     }
 
+    // ──────────────── idempotency: replay instead of re-running ────────────────
+
+    /**
+     * How many processed-message receipts to keep per session, and how long a
+     * content-hash receipt stays replayable.
+     *
+     * The endpoint's flock only stops requests that OVERLAP; duplicates that
+     * arrive back-to-back (a spam-clicked Send, a retry, a stale tab) each get
+     * the lock cleanly and used to run the whole chain again — appending a second
+     * copy of the answer and billing a second round of LLM calls. These receipts
+     * close that hole: the same submission returns the response it produced the
+     * first time instead of executing anything.
+     *
+     * A client-supplied id identifies one submission exactly, so it replays
+     * forever. A content hash is only a guess — the user may legitimately send
+     * "yes" twice, ten minutes apart — so hash receipts expire.
+     */
+    const DEDUPE_KEEP           = 25;
+    const DEDUPE_WINDOW_SECONDS = 120;
+
+    /**
+     * Return the stored result for an already-processed submission, or null if
+     * this is genuinely new work.
+     *
+     * @param bool $timeBound true for content-hash keys (expire after
+     *                        DEDUPE_WINDOW_SECONDS), false for client-supplied ids.
+     */
+    public static function findProcessedResult(string $id, string $key, bool $timeBound = false): ?array
+    {
+        $data  = self::readSession($id);
+        $entry = $data['processed_messages'][$key] ?? null;
+        if (!is_array($entry) || !is_array($entry['result'] ?? null)) { return null; }
+
+        if ($timeBound) {
+            $ts = strtotime((string) ($entry['ts'] ?? ''));
+            if ($ts === false || (time() - $ts) > self::DEDUPE_WINDOW_SECONDS) { return null; }
+        }
+        return $entry['result'];
+    }
+
+    /** Record what a submission produced, so a duplicate can replay it. */
+    public static function recordProcessedResult(string $id, string $key, array $result): bool
+    {
+        $data = self::readSession($id);
+        if ($data === null) { return false; }
+        if (!isset($data['processed_messages']) || !is_array($data['processed_messages'])) {
+            $data['processed_messages'] = [];
+        }
+
+        // Delete-then-append keeps insertion order == recency, so the slice below
+        // always evicts the oldest receipts.
+        unset($data['processed_messages'][$key]);
+        $data['processed_messages'][$key] = ['ts' => gmdate('c'), 'result' => $result];
+        if (count($data['processed_messages']) > self::DEDUPE_KEEP) {
+            $data['processed_messages'] =
+                array_slice($data['processed_messages'], -self::DEDUPE_KEEP, null, true);
+        }
+
+        self::atomicSave($id, $data);
+        return true;
+    }
+
+    // ─────────────── per-domain turn counter: the loop breaker ───────────────
+
+    /**
+     * Agent turns spent on one domain, counted explicitly rather than inferred
+     * from a transcript slice.
+     *
+     * The Orchestrator force-advances a domain that won't close on its own. That
+     * guard used to count agent turns inside the last 12 transcript entries,
+     * which silently read 0 whenever several user messages landed in a row — so
+     * the exact situation that produced a runaway question loop was also the one
+     * that disabled the loop breaker. A counter keyed by domain can't be fooled
+     * by transcript shape.
+     */
+    public static function bumpDomainTurns(string $id, string $domain): int
+    {
+        $data = self::readSession($id);
+        if ($data === null) { return 0; }
+        $next = (int) ($data['domain_turns'][$domain] ?? 0) + 1;
+        $data['domain_turns'][$domain] = $next;
+        self::atomicSave($id, $data);
+        return $next;
+    }
+
+    /** Clear the counter once a domain closes, so a reopened domain starts fresh. */
+    public static function resetDomainTurns(string $id, string $domain): bool
+    {
+        $data = self::readSession($id);
+        if ($data === null) { return false; }
+        unset($data['domain_turns'][$domain]);
+        self::atomicSave($id, $data);
+        return true;
+    }
+
+    /** Turns already spent on a domain (0 if it has never been active). */
+    public static function readDomainTurns(string $id, string $domain): int
+    {
+        $data = self::readSession($id);
+        return (int) ($data['domain_turns'][$domain] ?? 0);
+    }
+
     /**
      * Persist the Compiler Agent's generated 5-prompt build plan (FP9).
      * Accepts the assoc form (prompt_1 … prompt_5) the ManifestGenerator returns

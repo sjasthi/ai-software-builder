@@ -10,6 +10,12 @@
  *      Send (or Enter-mashing) could launch parallel chain executions that both
  *      write domain_state and corrupt coverage. The server half is endpoint.php's
  *      per-session flock (returns 409 {busy:true}).
+ *
+ *      session.php now renders the input and Send button disabled and this script
+ *      unlocks them, so the form is never live before the handler below is bound.
+ *      Every submit also carries a client_msg_id: if a duplicate reaches the server
+ *      anyway, endpoint.php replays the first response rather than re-running the
+ *      chain. Three layers, because the lock alone only covers overlap.
  *   2. Apply the JSON reply in place — append the agent bubble, flip the domain
  *      badges via the matrix partial's setDomainState(), and on completion swap
  *      the right panel to the server-rendered build plan.
@@ -75,6 +81,18 @@
         });
     }
 
+    /**
+     * Identify one submission, so the server can tell a duplicate from a new answer.
+     * randomUUID() where available; the fallback only needs to be unique within a
+     * session's dedupe window, not cryptographically strong.
+     */
+    function newMessageId() {
+        if (window.crypto && typeof crypto.randomUUID === 'function') {
+            return crypto.randomUUID();
+        }
+        return 'm-' + Date.now() + '-' + Math.random().toString(16).slice(2, 10);
+    }
+
     /** Flip every domain badge to match the server's authoritative domain_state. */
     function applyDomainState(state) {
         if (!state || typeof setDomainState !== 'function') { return; }
@@ -103,6 +121,7 @@
 
         var body = new FormData(form);
         body.set('message', message);             // FormData snapshots the now-cleared input
+        body.set('client_msg_id', newMessageId());
 
         fetch('endpoint.php', { method: 'POST', body: body })
             .then(function (res) {
@@ -140,4 +159,10 @@
                 setBusy(false);
             });
     });
+
+    // ── Unlock ──────────────────────────────────────────────────────────────
+    // The submit handler is bound, so every click is managed from here on. Only now
+    // do the controls session.php rendered disabled become usable — and never for a
+    // session that is already complete.
+    if (form.dataset.done !== '1') { setBusy(false); }
 })();

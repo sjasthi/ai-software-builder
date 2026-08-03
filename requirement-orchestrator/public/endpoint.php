@@ -14,6 +14,14 @@
  * requests can never write domain_state for the same session simultaneously and
  * corrupt coverage.
  *
+ * Idempotency (the other half): the flock only stops requests that OVERLAP. Under
+ * a single PHP worker a spam-clicked Send arrives serialized, so every duplicate
+ * acquired the lock cleanly and ran the whole chain again — a dozen copies of one
+ * answer in the transcript and a dozen rounds of LLM billing. Each submission now
+ * carries a client_msg_id; a repeat of one already processed replays the stored
+ * response instead of executing anything. Requests without an id (a stale tab, a
+ * native form post) fall back to a short-lived hash of the message text.
+ *
  * Owner: Cox (FP10). Client + stress test: Port (FP10).
  */
 header('Content-Type: application/json; charset=utf-8');
@@ -32,6 +40,12 @@ function respond(array $payload, int $code = 200): void
 
 $id  = $_POST['id'] ?? '';
 $msg = trim($_POST['message'] ?? '');
+
+// Per-submission id from app.js. Same charset rule as a session id so it can be
+// used as a storage key; anything malformed is treated as absent, which falls the
+// request back to content-hash dedupe rather than trusting it.
+$clientMsgId = trim($_POST['client_msg_id'] ?? '');
+if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $clientMsgId)) { $clientMsgId = ''; }
 
 // Key arrives as a plain POST field — used for this request only, never stored.
 $apiKey = trim($_POST['api_key'] ?? '');
@@ -61,6 +75,25 @@ if ($lockFp === false || !flock($lockFp, LOCK_EX | LOCK_NB)) {
 // From here on the lock is held. flock is released automatically when the script
 // terminates (exit closes the handle), so the respond()/exit paths are safe.
 try {
+    // ── Idempotency guard ───────────────────────────────────────────────────
+    // Held under the lock, so a burst can't race past it. An explicit client id
+    // names one submission exactly and replays forever; a content hash is only a
+    // guess (the user may legitimately answer "yes" twice) so it expires.
+    $dedupeKey  = $clientMsgId !== '' ? 'cid:' . $clientMsgId : 'msg:' . sha1($msg);
+    $hashOnly   = ($clientMsgId === '');
+    $replay     = InterviewSession::findProcessedResult($id, $dedupeKey, $hashOnly);
+
+    if ($replay !== null) {
+        // Nothing is written and no agent runs — the caller gets exactly what its
+        // first attempt produced. plan_html is re-rendered rather than stored, so
+        // receipts stay small and the panel always reflects the current session.
+        $replay['replayed'] = true;
+        if (!empty($replay['done'])) {
+            $replay['plan_html'] = renderBuildPlan($id);
+        }
+        respond($replay);
+    }
+
     // Use the first user answer as the session title (parity with post_message.php).
     if (($session['title'] ?? '') === 'Untitled session') {
         $short = mb_strlen($msg) > 48 ? mb_substr($msg, 0, 48) . '…' : $msg;
@@ -97,15 +130,17 @@ try {
         'active_domain' => $activeDomain,
     ];
 
+    // Store the receipt BEFORE responding, so a duplicate that is already queued
+    // behind this request finds it and replays instead of re-running the chain.
+    // plan_html is deliberately excluded — it is re-rendered on replay.
+    InterviewSession::recordProcessedResult($id, $dedupeKey, $payload);
+
     // On completion, hand back the server-rendered build-plan panel so the client
     // can swap the right pane in place. dispatch() already ran the Compiler via
     // ensureBuildPlan() and writeDomainState() flipped status to 'complete', so the
     // reloaded session carries the stored plan the partial renders from.
     if ($done) {
-        $session = InterviewSession::readSession($id);
-        ob_start();
-        include __DIR__ . '/partials/build_plan.php';   // expects $session in scope
-        $payload['plan_html'] = ob_get_clean();
+        $payload['plan_html'] = renderBuildPlan($id);
     }
 
     respond($payload);
@@ -115,6 +150,18 @@ try {
         flock($lockFp, LOCK_UN);
         fclose($lockFp);
     }
+}
+
+/**
+ * Render the right-hand build-plan panel for a completed session. Called on both
+ * the first completion and on any replay of it, so the two paths can never drift.
+ */
+function renderBuildPlan(string $id): string
+{
+    $session = InterviewSession::readSession($id);   // the partial expects $session
+    ob_start();
+    include __DIR__ . '/partials/build_plan.php';
+    return (string) ob_get_clean();
 }
 
 /**

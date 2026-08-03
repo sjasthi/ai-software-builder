@@ -98,13 +98,21 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
                 <?php endforeach; ?>
             </div>
 
-            <form id="input-area" method="post" action="endpoint.php" autocomplete="off">
+            <!--
+                The input surface renders DISABLED and is unlocked by js/app.js once its
+                submit handler is bound. Failing closed matters: app.js is the only thing
+                that turns a click into a managed AJAX post, and before it runs this is a
+                live native form. A Send click in that window used to fire an unmanaged
+                POST — the origin of the duplicate-submission pile-up. No JS, no sending.
+            -->
+            <form id="input-area" method="post" action="endpoint.php" autocomplete="off"
+                  data-done="<?= $complete ? '1' : '' ?>">
                 <input type="hidden" name="id" value="<?= htmlspecialchars($id) ?>">
                 <input type="hidden" name="api_key" id="api_key_field" value="">
                 <div class="input-group">
                     <input type="text" name="message" class="form-control" placeholder="Type your answer…"
-                           aria-label="Your answer" <?= $complete ? 'disabled' : 'autofocus' ?>>
-                    <button class="btn btn-primary px-4" type="submit" <?= $complete ? 'disabled' : '' ?>>
+                           aria-label="Your answer" disabled>
+                    <button class="btn btn-primary px-4" type="submit" disabled>
                         <span class="spinner-border spinner-border-sm align-middle" role="status" aria-hidden="true"></span>
                         <span class="send-label">Send&nbsp;→</span>
                     </button>
@@ -112,6 +120,9 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
                 <?php if ($complete): ?>
                     <small class="text-success">All 8 areas covered — your build plan is on the right.</small>
                 <?php endif; ?>
+                <noscript>
+                    <small class="text-danger">This interview needs JavaScript enabled to send answers.</small>
+                </noscript>
             </form>
         </div>
 
@@ -149,9 +160,20 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!--
+    All three are deferred so a slow CDN can no longer delay app.js: deferred scripts
+    download in parallel and execute in order, before DOMContentLoaded. Previously
+    jQuery and Bootstrap were render-blocking and app.js waited on both, leaving the
+    form live but unmanaged for as long as that took.
+-->
+<script defer src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- FP10 async pipeline: submit lockdown + single AJAX POST to endpoint.php (Port). -->
+<script defer src="js/app.js"></script>
 <script>
+// Inline code runs immediately, so it waits for DOMContentLoaded — by then the
+// deferred scripts above have executed and `bootstrap` exists.
+document.addEventListener('DOMContentLoaded', function () {
     // Keep the chat scrolled to the latest message.
     var cs = document.getElementById('chat-stream');
     if (cs) { cs.scrollTop = cs.scrollHeight; }
@@ -192,8 +214,7 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
             });
         }
     })();
+});
 </script>
-<!-- FP10 async pipeline: submit lockdown + single AJAX POST to endpoint.php (Port). -->
-<script src="js/app.js"></script>
 </body>
 </html>

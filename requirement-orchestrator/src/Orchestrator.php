@@ -15,6 +15,12 @@ require_once __DIR__ . '/ManifestGenerator.php';
 
 class Orchestrator
 {
+    /**
+     * Agent turns allowed on one domain before it is force-advanced. Prevents a
+     * domain the extraction agent never judges COVERED from looping forever.
+     */
+    const MAX_DOMAIN_TURNS = 5;
+
     /** @var DomainAgent[] keyed by domain key */
     private array $agents;
 
@@ -61,21 +67,22 @@ class Orchestrator
         // build-plan JSON can later show which domains were force-advanced.
         $genuinelyCovered = !empty($result['covered']);
 
-        // Force-advance after 5 agent turns on the same domain to prevent infinite loops.
-        if (!$result['covered']) {
-            $agentTurnsOnDomain = count(array_filter(
-                array_slice($transcript, -12),
-                fn($t) => ($t['role'] ?? '') === 'agent'
-            ));
-            if ($agentTurnsOnDomain >= 5) {
-                $result['covered'] = true;
-                $result['detail']  = $result['detail'] ?: 'Sufficient detail gathered across multiple exchanges.';
-            }
+        // Force-advance after MAX_DOMAIN_TURNS turns on this domain to prevent
+        // infinite loops. The count comes from a per-domain counter on the session,
+        // not from a transcript slice: a slice reads 0 agent turns whenever several
+        // user messages arrive back-to-back, which disabled this guard precisely
+        // when a runaway loop was underway. Duplicate submissions never reach here
+        // (endpoint.php replays them), so the counter tracks real turns only.
+        $turnsOnDomain = InterviewSession::bumpDomainTurns($sessionId, $activeKey);
+        if (!$result['covered'] && $turnsOnDomain >= self::MAX_DOMAIN_TURNS) {
+            $result['covered'] = true;
+            $result['detail']  = $result['detail'] ?: 'Sufficient detail gathered across multiple exchanges.';
         }
 
         if ($result['covered']) {
             $domainState[$activeKey] = 'COVERED';
             InterviewSession::writeDomainState($sessionId, $domainState);
+            InterviewSession::resetDomainTurns($sessionId, $activeKey);
             if (($result['detail'] ?? '') !== '') {
                 InterviewSession::writeDomainAnswer($sessionId, $activeKey, $result['detail'], $genuinelyCovered);
             }
