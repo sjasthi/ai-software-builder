@@ -109,8 +109,12 @@ User Message
 ```
 /requirement-orchestrator/
 │
+├── validate_manifest.php         # STAGE 1 VALIDATOR: CLI check of a compiled plan (FP-Final)
+│
 ├── config/
-│   └── database.php              # DB connection & shared utilities
+│   ├── database.php              # DB connection & shared utilities
+│   ├── schema.sql                # sessions, conversation_log, domain_state
+│   └── local.php.example         # Multi-provider key/config template
 │
 ├── src/
 │   ├── InterviewSession.php      # SNAPSHOT AGENT: session state, transcript, domain answers
@@ -126,14 +130,26 @@ User Message
 │   │   ├── CurrentProcessAgent.php  # Covers: named current steps or tools being replaced
 │   │   └── InteractionModelAgent.php # Covers: trigger type + frequency
 │   ├── LlmClient.php             # Provider abstraction (Claude, OpenAI, mock)
-│   └── ManifestGenerator.php     # COMPILER AGENT: 5-prompt build plan (FP9)
+│   ├── MySQLPersister.php        # Incremental MySQL writes; silent-fails without a DB
+│   ├── ManifestGenerator.php     # COMPILER AGENT: 5-prompt build plan (FP9)
+│   └── ManifestValidator.php     # Plan validation rules — shared by runtime, tests, CLI (FP9)
 │
 └── public/
-    ├── index.php                 # Split-pane UI: chat + live domain matrix
-    ├── post_message.php          # Controller: calls Orchestrator::dispatch() on each submit
+    ├── index.php                 # Landing: start a session or reopen a previous one
+    ├── session.php               # Split-pane UI: chat + live domain matrix
+    ├── endpoint.php              # CHAIN CONTROLLER: Extraction → gate → Routing or Compiler (FP10)
+    ├── new_session.php           # Creates a session, redirects into it
+    ├── delete_session.php        # Removes a saved session
+    ├── partials/
+    │   ├── domain_matrix.php     # The 8 data-domain badges + progress bar
+    │   ├── build_plan.php        # Completion view: 5 prompt cards, copy + .md/.txt/.json download
+    │   └── session_list.php      # Previous Sessions list (landing + drawer)
     └── js/
         └── app.js                # AJAX pipeline: UI lockdown, badge updates
 ```
+
+> `public/post_message.php` — the original synchronous controller — is superseded by
+> `endpoint.php` (FP10) and kept only for reference; nothing links to it.
 
 **Why one agent per domain:** Each domain has a different definition of "covered." A single extractor evaluating all 8 at once must generalize its bar, which produces shallow answers. Dedicated agents can be opinionated — PainPointsAgent won't accept "it's slow" without a concrete consequence; DataSourcesAgent won't accept "we have data" without a named source. Narrower system prompts produce more accurate extraction, and each agent can probe its domain across multiple turns before advancing.
 
