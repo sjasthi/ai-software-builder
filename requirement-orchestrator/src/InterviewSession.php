@@ -79,13 +79,19 @@ class InterviewSession
 
     // ───────────────────────── Cox's methods ─────────────────────────
 
-    /** Create a new session file, seeded with the opening agent greeting. */
-    public static function createSession(string $title = ''): string
+    /**
+     * Create a new session file, seeded with the opening agent greeting.
+     * $owner is the user_id that owns this session (accounts feature). It is stamped
+     * into the JSON so listSessions() can scope by user and sessionOwner() can guard
+     * direct access. Null owner = unowned/orphaned (only for pre-accounts data).
+     */
+    public static function createSession(string $title = '', ?int $owner = null): string
     {
         $id   = gmdate('YmdHis') . '-' . substr(bin2hex(random_bytes(3)), 0, 6);
         $now  = gmdate('c');
         $data = [
             'session_id'      => $id,
+            'owner'           => $owner,
             'title'           => $title !== '' ? $title : 'Untitled session',
             'created_at'      => $now,
             'updated_at'      => $now,
@@ -103,6 +109,17 @@ class InterviewSession
         ];
         self::atomicSave($id, $data);
         return $id;
+    }
+
+    /**
+     * The user_id that owns a session, or null if unowned/missing (orphaned legacy
+     * data, or a bad id). Used by Auth::ownsSession() to guard direct access.
+     */
+    public static function sessionOwner(string $id): ?int
+    {
+        $data  = self::readSession($id);
+        $owner = $data['owner'] ?? null;
+        return $owner === null ? null : (int) $owner;
     }
 
     /** Load and decode a session, or null if it doesn't exist. */
@@ -345,16 +362,22 @@ class InterviewSession
     // ──────────────────── backs the previous-sessions UI ────────────────────
 
     /**
-     * Summaries of every saved session, newest first. Used by the Landing
-     * screen and the hamburger drawer.
+     * Summaries of saved sessions, newest first. Used by the Landing screen and the
+     * hamburger drawer.
+     *
+     * When $owner is given, only that user's sessions are returned — orphaned
+     * (unowned) sessions and other users' sessions are excluded, so each account
+     * sees only its own. Call with null only for admin/legacy "show everything" use.
+     *
      * @return array<int,array{id:string,title:string,updated_at:string,covered:int,total:int,status:string}>
      */
-    public static function listSessions(): array
+    public static function listSessions(?int $owner = null): array
     {
         $out = [];
         foreach (glob(self::storeDir() . '/*.json') as $file) {
             $data = json_decode(file_get_contents($file), true);
             if (!is_array($data) || !isset($data['session_id'])) { continue; }
+            if ($owner !== null && (int) ($data['owner'] ?? 0) !== $owner) { continue; }
             $covered = count(array_filter($data['domain_state'] ?? [], fn($v) => $v === 'COVERED'));
             $out[] = [
                 'id'         => $data['session_id'],

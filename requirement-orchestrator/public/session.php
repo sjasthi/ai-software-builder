@@ -11,6 +11,9 @@
  * live domain state, and persists each answer via post_message.php.
  */
 require_once __DIR__ . '/../src/InterviewSession.php';
+require_once __DIR__ . '/../src/Auth.php';
+
+Auth::requireLogin();
 
 $id      = $_GET['id'] ?? '';
 $session = InterviewSession::readSession($id);
@@ -18,9 +21,16 @@ if ($session === null) {                 // bad/old id → back to the landing l
     header('Location: index.php');
     exit;
 }
+// A user may only open a session they own (orphaned sessions stay accessible).
+if (!Auth::ownsSession($id)) {
+    header('Location: index.php');
+    exit;
+}
 
 $complete     = ($session['status'] ?? 'in_progress') === 'complete';
 $domainState  = $session['domain_state'];   // consumed by the matrix partial
+$savedKey     = Auth::keyStorageAvailable() ? Auth::getApiKey() : null;  // decrypted, in-memory
+$username     = Auth::currentUsername();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -68,7 +78,13 @@ $domainState  = $session['domain_state'];   // consumed by the matrix partial
             </button>
             <span class="navbar-brand mb-0 fw-semibold" style="font-size:1rem;">Requirement Orchestrator</span>
         </div>
-        <a href="new_session.php" class="btn btn-outline-light btn-sm">＋ New Session</a>
+        <div class="d-flex align-items-center gap-2 gap-sm-3">
+            <span class="navbar-text text-white-50 small d-none d-sm-inline">
+                Signed in as <span class="text-white fw-semibold"><?= htmlspecialchars((string) $username) ?></span>
+            </span>
+            <a href="new_session.php" class="btn btn-outline-light btn-sm">＋ New Session</a>
+            <a href="logout.php" class="btn btn-outline-light btn-sm">Log out</a>
+        </div>
     </nav>
 
     <!-- ── Hamburger drawer: previous sessions (Bootstrap Offcanvas) ── -->
@@ -192,9 +208,15 @@ document.addEventListener('DOMContentLoaded', function () {
             if (keyField) keyField.value = key;
         }
 
+        // Key saved to this account (decrypted server-side), or '' if none.
+        var savedKey = <?= json_encode($savedKey ?? '') ?>;
+
         var stored = sessionStorage.getItem('api_key');
         if (stored) {
             applyKey(stored);
+        } else if (savedKey) {
+            // Returning user with a remembered key — use it, no prompt.
+            applyKey(savedKey);
         } else {
             // No key — show modal and block the form until key is entered.
             modal.show();

@@ -11,11 +11,15 @@
  */
 require_once __DIR__ . '/../src/InterviewSession.php';
 require_once __DIR__ . '/../src/MySQLPersister.php';
+require_once __DIR__ . '/../src/Auth.php';
+
+Auth::requireLogin();
 
 $id     = trim($_POST['id'] ?? '');
 $return = trim($_POST['return'] ?? '');
 
-if ($id !== '') {
+// Only let a user delete a session they own (orphaned sessions remain deletable).
+if ($id !== '' && Auth::ownsSession($id)) {
     InterviewSession::deleteSession($id);
     MySQLPersister::deleteSession($id);
 }

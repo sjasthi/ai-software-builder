@@ -8,7 +8,8 @@
  * $activeId is also passed to delete_session.php so a delete returns the user to
  * whichever session they were viewing (unless that's the one deleted).
  */
-$sessions = InterviewSession::listSessions();
+// Scope to the logged-in account so each user only sees their own sessions.
+$sessions = InterviewSession::listSessions(Auth::currentUserId());
 $activeId = $activeId ?? null;
 ?>
 <style>

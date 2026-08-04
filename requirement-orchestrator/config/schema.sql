@@ -17,14 +17,43 @@ DROP TABLE IF EXISTS llm_requests;
 DROP TABLE IF EXISTS generated_plans;
 DROP TABLE IF EXISTS domain_state;
 DROP TABLE IF EXISTS conversation_log;
+DROP TABLE IF EXISTS password_resets;
 DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;   -- parent of sessions.user_id + password_resets — dropped last
 
 -- ============================================================
 -- Tables
 -- ============================================================
 
+-- User accounts (accounts feature): username + password_hash, plus an optional
+-- API key encrypted at rest (AES-256-GCM blob: nonce|tag|ciphertext).
+CREATE TABLE users (
+    user_id       BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    username      VARCHAR(64)  NOT NULL UNIQUE,
+    email         VARCHAR(255) NULL UNIQUE,          -- recovery email (unique; NULLs allowed)
+    password_hash VARCHAR(255) NOT NULL,
+    api_key_enc   VARBINARY(1024) DEFAULT NULL,
+    api_provider  VARCHAR(20) DEFAULT NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_username_nonempty CHECK (CHAR_LENGTH(username) > 0)
+);
+
+-- One-time, single-use password-reset tokens (only the SHA-256 hash is stored).
+CREATE TABLE password_resets (
+    reset_id   BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    user_id    BIGINT UNSIGNED NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    expires_at DATETIME NOT NULL,          -- DATETIME: no implicit ON UPDATE bump
+    used_at    DATETIME NULL DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_reset_token (token_hash),
+    CONSTRAINT fk_reset_user FOREIGN KEY (user_id)
+        REFERENCES users(user_id) ON DELETE CASCADE
+);
+
 CREATE TABLE sessions (
     session_id      BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    user_id         BIGINT UNSIGNED NULL,          -- owning account; NULL = orphaned
     session_token   CHAR(64) NOT NULL UNIQUE,
     technical_level ENUM(
         'NON_TECHNICAL',
@@ -34,7 +63,11 @@ CREATE TABLE sessions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT chk_token_length CHECK (CHAR_LENGTH(session_token) = 64)
+    CONSTRAINT chk_token_length CHECK (CHAR_LENGTH(session_token) = 64),
+    CONSTRAINT fk_session_user
+        FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE
 );
 
 CREATE TABLE conversation_log (

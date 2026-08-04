@@ -7,8 +7,14 @@
  */
 require_once __DIR__ . '/../src/InterviewSession.php';
 require_once __DIR__ . '/../src/LlmClient.php';
+require_once __DIR__ . '/../src/Auth.php';
 
-$mockMode = LlmClientFactory::isMock();
+Auth::requireLogin();
+
+$mockMode    = LlmClientFactory::isMock();
+$username    = Auth::currentUsername();
+$keyStorage  = Auth::keyStorageAvailable();          // is "remember my key" offered?
+$savedKey    = $keyStorage ? Auth::getApiKey() : null;  // decrypted, in-memory only
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -27,7 +33,12 @@ $mockMode = LlmClientFactory::isMock();
 <body>
     <nav class="navbar navbar-dark bg-dark px-3 py-2">
         <span class="navbar-brand mb-0 fw-semibold" style="font-size:1rem;">Requirement Orchestrator</span>
-        <span class="navbar-text text-white-50 small d-none d-sm-inline">AI Software Build-Plan Generator</span>
+        <div class="d-flex align-items-center gap-3">
+            <span class="navbar-text text-white-50 small d-none d-sm-inline">
+                Signed in as <span class="text-white fw-semibold"><?= htmlspecialchars((string) $username) ?></span>
+            </span>
+            <a href="logout.php" class="btn btn-outline-light btn-sm">Log out</a>
+        </div>
     </nav>
 
     <div class="landing-wrap">
@@ -55,9 +66,17 @@ $mockMode = LlmClientFactory::isMock();
                             <button class="btn btn-primary" type="submit">Begin&nbsp;→</button>
                         </div>
                         <div class="form-text">
-                            Accepts Anthropic (Claude) or OpenAI (ChatGPT) keys. Stored only in this
-                            browser tab — cleared when you close the tab or window.
+                            Accepts Anthropic (Claude) or OpenAI (ChatGPT) keys. By default stored only in
+                            this browser tab — cleared when you close the tab or window.
                         </div>
+                        <?php if ($keyStorage): ?>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="remember_key">
+                            <label class="form-check-label small" for="remember_key">
+                                Remember my key on this account (stored encrypted)
+                            </label>
+                        </div>
+                        <?php endif; ?>
                         <div id="key-error" class="text-danger small mt-1" style="display:none;">Please enter a valid API key.</div>
                     </form>
                 </div>
@@ -101,8 +120,29 @@ $mockMode = LlmClientFactory::isMock();
             sessionStorage.removeItem('api_key');
         }
 
-        // On load: if key already in sessionStorage, skip the gate.
-        if (sessionStorage.getItem('api_key')) { showMain(); }
+        var rememberBox = document.getElementById('remember_key');
+        // Key saved to this account (decrypted server-side), or '' if none.
+        var savedKey = <?= json_encode($savedKey ?? '') ?>;
+
+        function persistPreference(key, remember) {
+            // Tell the server to store (encrypted) or forget the key for this account.
+            try {
+                var body = new URLSearchParams();
+                body.set('remember', remember ? '1' : '0');
+                if (remember) { body.set('api_key', key); }
+                fetch('save_key.php', { method: 'POST', body: body });
+            } catch (e) { /* non-fatal: key still works for this tab */ }
+        }
+
+        // On load: prefer a key already in this tab; otherwise fall back to the
+        // account's saved key so returning users skip the gate entirely.
+        if (sessionStorage.getItem('api_key')) {
+            showMain();
+        } else if (savedKey) {
+            sessionStorage.setItem('api_key', savedKey);
+            if (rememberBox) { rememberBox.checked = true; }
+            showMain();
+        }
 
         form.addEventListener('submit', function (e) {
             e.preventDefault();
@@ -110,11 +150,16 @@ $mockMode = LlmClientFactory::isMock();
             if (!key) { errMsg.style.display = ''; return; }
             errMsg.style.display = 'none';
             sessionStorage.setItem('api_key', key);
+            if (rememberBox) { persistPreference(key, rememberBox.checked); }
             showMain();
         });
 
         if (clearBtn) {
-            clearBtn.addEventListener('click', showGate);
+            clearBtn.addEventListener('click', function () {
+                // "Clear key" forgets it everywhere: this tab AND the account.
+                if (rememberBox) { rememberBox.checked = false; persistPreference('', false); }
+                showGate();
+            });
         }
         <?php endif; ?>
     })();

@@ -10,9 +10,18 @@
 require_once __DIR__ . '/../src/InterviewSession.php';
 require_once __DIR__ . '/../src/Orchestrator.php';
 require_once __DIR__ . '/../src/MySQLPersister.php';
+require_once __DIR__ . '/../src/Auth.php';
+
+Auth::requireLogin();
 
 $id  = $_POST['id'] ?? '';
 $msg = trim($_POST['message'] ?? '');
+
+// A user may only post to their own session (orphaned sessions stay accessible).
+if ($id !== '' && !Auth::ownsSession($id)) {
+    header('Location: index.php');
+    exit;
+}
 
 // Key arrives as a plain POST field — used for this request only, never stored.
 $apiKey = trim($_POST['api_key'] ?? '');

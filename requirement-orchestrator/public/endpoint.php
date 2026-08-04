@@ -29,6 +29,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../src/InterviewSession.php';
 require_once __DIR__ . '/../src/Orchestrator.php';
 require_once __DIR__ . '/../src/MySQLPersister.php';
+require_once __DIR__ . '/../src/Auth.php';
 
 /** Emit JSON and stop. */
 function respond(array $payload, int $code = 200): void
@@ -38,8 +39,20 @@ function respond(array $payload, int $code = 200): void
     exit;
 }
 
+// This is an AJAX endpoint, so an expired/absent login returns JSON (401) rather
+// than an HTML redirect — app.js can surface it instead of injecting a login page
+// into the chat pane.
+if (!Auth::check()) {
+    respond(['ok' => false, 'error' => 'not_logged_in'], 401);
+}
+
 $id  = $_POST['id'] ?? '';
 $msg = trim($_POST['message'] ?? '');
+
+// Enforce session ownership before doing any work (orphaned sessions stay open).
+if ($id !== '' && !Auth::ownsSession($id)) {
+    respond(['ok' => false, 'error' => 'forbidden'], 403);
+}
 
 // Per-submission id from app.js. Same charset rule as a session id so it can be
 // used as a storage key; anything malformed is treated as absent, which falls the

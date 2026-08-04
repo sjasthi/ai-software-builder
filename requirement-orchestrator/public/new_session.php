@@ -4,7 +4,11 @@
  * and redirects into the workspace at the opening question.
  */
 require_once __DIR__ . '/../src/InterviewSession.php';
+require_once __DIR__ . '/../src/Auth.php';
 
-$id = InterviewSession::createSession();
+Auth::requireLogin();
+
+// Stamp the creating account as the owner so it's scoped to this user.
+$id = InterviewSession::createSession('', Auth::currentUserId());
 header('Location: session.php?id=' . urlencode($id));
 exit;
